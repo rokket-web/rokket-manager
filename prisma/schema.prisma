@@ -7,6 +7,12 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ClientStatus {
+  LEAD
+  ACTIVE
+  PAST
+}
+
 enum Role {
   ADMIN
   STAFF
@@ -14,21 +20,22 @@ enum Role {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  email         String   @unique
+  emailVerified Boolean  @default(false)
   image         String?
-  role          Role      @default(STAFF)
-  active        Boolean   @default(true)
-  // Phase 2 adds the Client relation; one portal user per client (unique).
-  clientId      String?   @unique
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  role          Role     @default(STAFF)
+  active        Boolean  @default(true)
+  // One portal user per client (unique).
+  clientId      String?  @unique
+  client        Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  sessions      Session[]
-  accounts      Account[]
-  auditLogs     AuditLog[]
+  sessions  Session[]
+  accounts  Account[]
+  auditLogs AuditLog[]
 
   @@index([role])
 }
@@ -97,4 +104,92 @@ model Setting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+model Client {
+  id           String       @id @default(cuid())
+  name         String
+  status       ClientStatus @default(LEAD)
+  website      String?
+  industry     String?
+  email        String?
+  phone        String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+  billingEmail String?
+  // Tax rate in basis points (825 = 8.25%). null = use the default tax rate setting; 0 = tax exempt.
+  taxRateBps   Int?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  contacts   Contact[]
+  notes      Note[]
+  activities Activity[]
+  tags       ClientTag[]
+  portalUser User?
+
+  @@index([status])
+  @@index([name])
+  @@index([createdAt])
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  title     String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([email])
+}
+
+// Internal-only notes. Never exposed to the client portal.
+model Note {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  authorId  String?
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+model Tag {
+  id      String      @id @default(cuid())
+  name    String      @unique // stored lowercase
+  clients ClientTag[]
+}
+
+model ClientTag {
+  clientId String
+  tagId    String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tag      Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, tagId])
+  @@index([tagId])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  actorId   String?
+  type      String // e.g. client.created, client.status_changed, contact.added, note.added
+  summary   String
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
 }

@@ -12,7 +12,7 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
 
 ## Commands
 
-`npm run dev` (port 3100, must match BETTER_AUTH_URL) | `build` | `lint` | `typecheck` | `test` | `e2e` | `db:migrate` | `db:deploy` | `db:seed` | `admin:create` (first admin on prod)
+`npm run dev` (port 3100, must match BETTER_AUTH_URL) | `build` | `lint` | `typecheck` | `test` | `test:int` (DB integration tests, never prod) | `e2e` | `db:migrate` | `db:deploy` | `db:seed` | `admin:create` (first admin on prod)
 
 ## Conventions
 
@@ -34,7 +34,19 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
 - Next 16: `cacheComponents` is off (per-user dynamic pages). Middleware is `src/proxy.ts`.
 - Neon: branches `production`, `Dev`, per-run `ci-*`. PITR window currently 6h (review in Phase 6).
 
+## Clients module (Phase 2)
+
+- Services: `src/server/services/clients.ts` (all reads/writes); permissions + row scope: `src/server/authz/clients.ts`.
+  Admin: full access. Staff: read-only, scoped by `clientScope()` (fails closed: sees none until Phase 3 adds project
+  assignment). Client role: no access to internal services.
+- Tax: `Client.taxRateBps` (null = default rate setting, 0 = exempt). Parse/format in `src/lib/tax.ts`.
+- Every write records an `Activity` (timeline) and an `AuditLog` row in the same transaction.
+- CSV: `src/lib/csv.ts` (papaparse); export neutralizes formula injection; import max 500 rows / 1 MB, skips duplicate names.
+- Integration tests (`*.int.test.ts`) run against DATABASE_URL and refuse the production endpoint.
+- `RATE_LIMIT_OFF=1` disables Better Auth rate limiting for e2e only, and only if BETTER_AUTH_URL is http://localhost.
+
 ## Deploy (Render)
+
 Build: `npm ci && npm run db:deploy && npm run build` (db:deploy = migrate with cold-start retries). Start: `npm start`.
 Health check: `/api/health`.
 
