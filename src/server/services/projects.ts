@@ -7,7 +7,6 @@ import { NotFoundError } from "@/server/errors";
 import { projectInputSchema, projectListSchema } from "@/lib/validation/project";
 import { getStorage } from "@/server/storage";
 
-type Tx = Prisma.TransactionClient;
 
 /** Staff must never receive budget or rate data. */
 function stripMoney<T extends { budgetCents?: number | null; hourlyRateCents?: number | null }>(
