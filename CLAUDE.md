@@ -45,6 +45,20 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
 - Integration tests (`*.int.test.ts`) run against DATABASE_URL and refuse the production endpoint.
 - `RATE_LIMIT_OFF=1` disables Better Auth rate limiting for e2e only, and only if BETTER_AUTH_URL is http://localhost.
 
+## Projects module (Phase 3)
+
+- Services: `src/server/services/{projects,tasks,time,files}.ts`; permissions + scope: `src/server/authz/projects.ts`.
+  Admin: everything. Staff: only projects they are members of; can manage tasks/comments, log their own time, upload
+  files; cannot create/edit/delete projects, manage members/milestones, or see budgets, rates or billable value
+  (stripped in the service layer, not the UI). Client role: no internal access.
+- Staff client scope (`clientScope`) = clients that have a project the staff user belongs to.
+- Time: `TimeEntry.rateCents` is snapshotted at creation; one running timer per user enforced by a partial unique
+  index (migration SQL). Amounts use `amountForMinutes()` (integer, half-up per entry) and the dashboard SQL matches it.
+- Files: GCS via signed URLs (`src/server/storage`), see `docs/gcs-setup.md`. Storage is resolved AFTER authorization.
+- Forms: `FieldForm` (src/components/forms) uses `useId` for field ids. Boolean form values use `boolish()`,
+  never `z.coerce.boolean()` (it treats "false" as true).
+- Deleting a client with projects is blocked (`Project.client` is onDelete Restrict).
+
 ## Deploy (Render)
 
 Build: `npm ci && npm run db:deploy && npm run build` (db:deploy = migrate with cold-start retries). Start: `npm start`.
