@@ -30,6 +30,13 @@ describe("canAccessPath", () => {
     expect(canAccessPath("CLIENT", "/clients")).toBe(false);
     expect(canAccessPath("CLIENT", "/clients/abc")).toBe(false);
   });
+  it("limits project creation to admin and project/time areas to internal roles", () => {
+    expect(canAccessPath("ADMIN", "/projects/new")).toBe(true);
+    expect(canAccessPath("STAFF", "/projects/new")).toBe(false);
+    expect(canAccessPath("STAFF", "/projects/abc")).toBe(true);
+    expect(canAccessPath("STAFF", "/time")).toBe(true);
+    for (const p of ["/projects", "/projects/abc", "/time"]) expect(canAccessPath("CLIENT", p)).toBe(false);
+  });
   it("does not match look-alike prefixes", () => {
     expect(canAccessPath("CLIENT", "/portalx")).toBe(true); // not the portal area; unlisted
     expect(canAccessPath("CLIENT", "/dashboardx")).toBe(true);
@@ -38,8 +45,15 @@ describe("canAccessPath", () => {
 
 describe("navFor / homeFor", () => {
   it("shows role-appropriate navigation", () => {
-    expect(navFor("ADMIN").map((n) => n.label)).toEqual(["Dashboard", "Clients", "Settings", "Users"]);
-    expect(navFor("STAFF").map((n) => n.label)).toEqual(["Dashboard", "Clients", "Settings"]);
+    expect(navFor("ADMIN").map((n) => n.label)).toEqual([
+      "Dashboard",
+      "Clients",
+      "Projects",
+      "Time",
+      "Settings",
+      "Users",
+    ]);
+    expect(navFor("STAFF").map((n) => n.label)).toEqual(["Dashboard", "Clients", "Projects", "Time", "Settings"]);
     expect(navFor("CLIENT").map((n) => n.label)).toEqual(["My Portal"]);
   });
   it("routes each role home", () => {

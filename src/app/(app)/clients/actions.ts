@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { ConflictError } from "@/server/errors";
 import { requireActor } from "@/server/authz/session";
 import {
   addContact,
@@ -45,7 +46,12 @@ export async function updateClientAction(id: string, _prev: FormState, fd: FormD
 
 export async function deleteClientAction(id: string) {
   const actor = await requireActor(["ADMIN"]);
-  await deleteClient(actor, id);
+  try {
+    await deleteClient(actor, id);
+  } catch (e) {
+    if (e instanceof ConflictError) redirect(`/clients/${id}?error=has-projects`);
+    throw e;
+  }
   revalidatePath("/clients");
   redirect("/clients");
 }

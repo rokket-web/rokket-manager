@@ -1,3 +1,4 @@
+import { orNotFound } from "@/lib/not-found";
 import { requireActor } from "@/server/authz/session";
 import { getClient } from "@/server/services/clients";
 import { bpsToPercent } from "@/lib/tax";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
   const actor = await requireActor(["ADMIN"]);
   const { id } = await params;
-  const c = await getClient(actor, id);
+  const c = await orNotFound(getClient(actor, id));
   const defaults: Record<string, string> = {
     name: c.name,
     status: c.status,
