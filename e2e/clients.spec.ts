@@ -95,10 +95,11 @@ test("admin: CSV import reports created, skipped and row errors", async ({ page 
   await expect(page).toHaveURL(/\/clients$/);
 });
 
-test("staff: read-only, sees no unassigned clients, cannot write or export", async ({ page }) => {
+test("staff: read-only, sees only clients on their projects, cannot write or export", async ({ page }) => {
   await login(page, "staff@rokket.test");
   await page.goto("/clients");
-  await expect(page.getByText("No clients are assigned to you yet.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Acme Plumbing" })).toBeVisible(); // has a project they are on
+  await expect(page.getByRole("link", { name: "Cedar Ridge Dental" })).toHaveCount(0); // no assigned project
   await expect(page.getByRole("link", { name: "New client" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Export CSV" })).toHaveCount(0);
   for (const path of ["/clients/new", "/clients/import"]) {

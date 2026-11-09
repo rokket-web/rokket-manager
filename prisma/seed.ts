@@ -95,6 +95,111 @@ async function seedClients() {
   console.info(`Seeded ${created} new clients (${CLIENTS.length} total defined).`);
 }
 
+const PROJECTS: [string, string, "PLANNING" | "ACTIVE" | "COMPLETED", number, number, boolean][] = [
+  ["Acme Plumbing", "Website redesign", "ACTIVE", 800000, 9500, true],
+  ["Bluebird Bakery", "Online store build", "ACTIVE", 1200000, 9500, true],
+  ["Cedar Ridge Dental", "SEO retainer", "ACTIVE", 300000, 8500, false],
+  ["Fable & Finch Books", "Shopify migration", "PLANNING", 950000, 9500, true],
+  ["Juniper Legal Group", "Intranet portal", "ACTIVE", 2000000, 11000, false],
+  ["Pinnacle Realty", "Listings integration", "COMPLETED", 1500000, 10500, true],
+];
+
+async function seedProjects() {
+  const [admin, staff] = await Promise.all([
+    db.user.findUnique({ where: { email: "admin@rokket.test" } }),
+    db.user.findUnique({ where: { email: "staff@rokket.test" } }),
+  ]);
+  if (!admin || !staff) return;
+  const day = 86_400_000;
+  const at = (n: number) => new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z").getTime() + n * day;
+  let created = 0;
+  for (const [clientName, name, status, budgetCents, rate, withStaff] of PROJECTS) {
+    const client = await db.client.findFirst({ where: { name: clientName } });
+    if (!client || (await db.project.findFirst({ where: { clientId: client.id, name } }))) continue;
+    const project = await db.project.create({
+      data: {
+        clientId: client.id,
+        name,
+        status,
+        budgetCents,
+        hourlyRateCents: rate,
+        startDate: new Date(at(-30)),
+        dueDate: new Date(at(30)),
+      },
+    });
+    const members = withStaff ? [admin.id, staff.id] : [admin.id];
+    await db.projectMember.createMany({ data: members.map((userId) => ({ projectId: project.id, userId })) });
+    const m1 = await db.milestone.create({
+      data: {
+        projectId: project.id,
+        title: "Discovery & design",
+        status: "COMPLETED",
+        dueDate: new Date(at(-10)),
+        position: 0,
+        billableCents: Math.round(budgetCents / 4),
+        completedAt: new Date(at(-9)),
+      },
+    });
+    const m2 = await db.milestone.create({
+      data: {
+        projectId: project.id,
+        title: "Build & launch",
+        status: "IN_PROGRESS",
+        dueDate: new Date(at(12)),
+        position: 1,
+        billableCents: Math.round(budgetCents / 2),
+      },
+    });
+    const tasks: [
+      string,
+      "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE",
+      "LOW" | "MEDIUM" | "HIGH" | "URGENT",
+      string,
+      number | null,
+    ][] = [
+      ["Kickoff call", "DONE", "MEDIUM", m1.id, -25],
+      ["Wireframes", "DONE", "HIGH", m1.id, -15],
+      ["Homepage build", "IN_PROGRESS", "HIGH", m2.id, 5],
+      ["Content migration", "TODO", "MEDIUM", m2.id, 9],
+      ["QA pass", "TODO", "LOW", m2.id, 11],
+      ["Client review", "REVIEW", "URGENT", m2.id, -2],
+    ];
+    for (const [title, tStatus, priority, milestoneId, due] of tasks) {
+      await db.task.create({
+        data: {
+          projectId: project.id,
+          milestoneId,
+          title,
+          status: tStatus,
+          priority,
+          assigneeId: withStaff ? staff.id : admin.id,
+          dueDate: due == null ? null : new Date(at(due)),
+          completedAt: tStatus === "DONE" ? new Date(at(-5)) : null,
+        },
+      });
+    }
+    for (let d = 1; d <= 6; d++) {
+      const userId = withStaff && d % 2 ? staff.id : admin.id;
+      const minutes = 60 + d * 20;
+      const startedAt = new Date(at(-d) + 14 * 3_600_000);
+      await db.timeEntry.create({
+        data: {
+          projectId: project.id,
+          userId,
+          startedAt,
+          endedAt: new Date(startedAt.getTime() + minutes * 60_000),
+          minutes,
+          billable: d !== 4,
+          rateCents: rate,
+          description: "Seeded work session",
+        },
+      });
+    }
+    created++;
+  }
+  console.info(`Seeded ${created} new projects.`);
+}
+
 async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Refusing to seed in production.");
   const password = process.env.SEED_PASSWORD;
@@ -115,6 +220,7 @@ async function main() {
       });
   }
   await seedClients();
+  await seedProjects();
   await db.setting.upsert({
     where: { key: "defaultTaxRateBps" },
     update: {},
