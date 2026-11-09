@@ -23,8 +23,14 @@ export function LoginForm() {
     const email = String(form.get("email") ?? "");
     if (mode === "password") {
       const { error } = await authClient.signIn.email({ email, password: String(form.get("password") ?? "") });
-      if (error) setError("Invalid email or password.");
-      else {
+      if (error) {
+        // 401 = wrong credentials. Anything else is a configuration/server problem: show the code so it's diagnosable.
+        setError(
+          error.status === 401
+            ? "Invalid email or password."
+            : `Sign-in failed (${error.status ?? "network error"}${error.code ? `: ${error.code}` : ""}).`,
+        );
+      } else {
         router.replace("/");
         router.refresh();
       }
