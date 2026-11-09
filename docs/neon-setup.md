@@ -41,3 +41,13 @@ recommended before launch (Phase 6 checklist).
 
 Point-in-time restore window on this project is currently **6 hours** (`history_retention_seconds = 21600`).
 Review before launch (Phase 6).
+
+## First admin on production
+
+Sign-up is disabled and the seed refuses to run in production. Create the first admin once, from a Render
+shell on the web service (or locally with production `DATABASE_URL`/`DIRECT_URL` exported):
+
+    npm run admin:create
+
+It prompts for email, name and a hidden password (min 12 chars), refuses to create a duplicate, and writes an
+audit-log entry. Never put the password in a file or in chat.

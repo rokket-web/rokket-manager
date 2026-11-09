@@ -15,7 +15,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "e2e": "playwright test",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "admin:create": "tsx scripts/admin-create.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

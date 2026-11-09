@@ -12,7 +12,7 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
 
 ## Commands
 
-`npm run dev` | `build` | `lint` | `typecheck` | `test` | `e2e` | `db:migrate` | `db:deploy` | `db:seed`
+`npm run dev` | `build` | `lint` | `typecheck` | `test` | `e2e` | `db:migrate` | `db:deploy` | `db:seed` | `admin:create` (first admin on prod)
 
 ## Conventions
 
