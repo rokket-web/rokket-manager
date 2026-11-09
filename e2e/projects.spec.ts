@@ -176,7 +176,10 @@ test("files: browser upload, download redirect and delete via the real bucket", 
   expect(file.headers()["content-disposition"]).toContain("attachment");
 
   // Delete removes it.
-  await page.getByRole("button", { name: "Delete" }).first().click();
-  await page.getByRole("button", { name: "Yes, delete" }).click();
+  // Scope to the file's own row: the project header also has a Delete button that must never be clicked here.
+  const row = page.getByRole("listitem").filter({ has: page.getByRole("link", { name: fileName }) });
+  await row.getByRole("button", { name: "Delete" }).click();
+  await row.getByRole("button", { name: "Yes, delete" }).click();
   await expect(page.getByRole("link", { name: fileName })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Website redesign" })).toBeVisible(); // the project itself is untouched
 });
