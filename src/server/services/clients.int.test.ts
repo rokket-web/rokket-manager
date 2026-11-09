@@ -142,11 +142,28 @@ describe("permissions", () => {
     expect((await db.client.findUniqueOrThrow({ where: { id: c.id } })).name).toBe(`${P} Perm`);
   });
 
-  it("staff only see clients in scope (none until project assignment exists)", async () => {
+  it("staff only see clients that have a project they belong to", async () => {
+    const staffUser = await db.user.findUniqueOrThrow({ where: { email: "staff@rokket.test" } });
+    const s: ActorLike = { id: staffUser.id, role: "STAFF" };
     const c = await mk("Hidden");
-    expect((await svc.listClients(staff, { q: P })).total).toBe(0);
-    await expect(svc.getClient(staff, c.id)).rejects.toBeInstanceOf(NotFoundError);
-    expect((await svc.listPipeline(staff)).LEAD).toEqual([]);
+    expect((await svc.listClients(s, { q: P })).total).toBe(0);
+    await expect(svc.getClient(s, c.id)).rejects.toBeInstanceOf(NotFoundError);
+    expect((await svc.listPipeline(s)).LEAD.some((x) => x.id === c.id)).toBe(false);
+
+    const project = await db.project.create({ data: { clientId: c.id, name: `${P} scope project` } });
+    await db.projectMember.create({ data: { projectId: project.id, userId: staffUser.id } });
+    expect((await svc.listClients(s, { q: P })).items.map((i) => i.id)).toEqual([c.id]);
+    expect((await svc.getClient(s, c.id)).id).toBe(c.id);
+    await db.project.delete({ where: { id: project.id } });
+    await expect(svc.getClient(s, c.id)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("refuses to delete a client that still has projects", async () => {
+    const c = await mk("HasProject");
+    const project = await db.project.create({ data: { clientId: c.id, name: `${P} blocker` } });
+    await expect(svc.deleteClient(admin, c.id)).rejects.toThrow(/has projects/);
+    await db.project.delete({ where: { id: project.id } });
+    await svc.deleteClient(admin, c.id);
   });
 
   it("portal client users cannot use any internal client service", async () => {

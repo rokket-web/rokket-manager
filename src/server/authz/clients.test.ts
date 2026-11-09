@@ -17,9 +17,11 @@ describe("client permissions", () => {
       expect(can("CLIENT", a)).toBe(false);
     expect(() => assertCan({ id: "u", role: "CLIENT" }, "client:read")).toThrow(ForbiddenError);
   });
-  it("scopes staff to nothing until projects exist, admin to everything", () => {
+  it("scopes staff to clients with a project they belong to, admin to everything", () => {
     expect(clientScope({ id: "u", role: "ADMIN" })).toEqual({});
-    expect(clientScope({ id: "u", role: "STAFF" })).toEqual({ id: { in: [] } });
+    expect(clientScope({ id: "u1", role: "STAFF" })).toEqual({
+      projects: { some: { members: { some: { userId: "u1" } } } },
+    });
     expect(clientScope({ id: "u", role: "CLIENT" })).toEqual({ id: { in: [] } });
   });
 });
