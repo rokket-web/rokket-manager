@@ -21,10 +21,10 @@ export function assertCan(actor: ActorLike, action: ClientAction): void {
 
 /**
  * Row-level scope applied to EVERY client query.
- * Admin: all. Staff: only clients with a project they are assigned to; projects arrive in Phase 3, so
- * until then staff see none (fail closed). Client: never reaches this layer.
+ * Admin: all. Staff: only clients that have a project they are a member of. Client role: never reaches this layer.
  */
 export function clientScope(actor: ActorLike): Prisma.ClientWhereInput {
   if (actor.role === "ADMIN") return {};
+  if (actor.role === "STAFF") return { projects: { some: { members: { some: { userId: actor.id } } } } };
   return { id: { in: [] } };
 }

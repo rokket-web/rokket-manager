@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { percentToBps } from "@/lib/tax";
+import { boolish } from "@/lib/validation/boolish";
 
 export const CLIENT_STATUSES = ["LEAD", "ACTIVE", "PAST"] as const;
 export const statusSchema = z.enum(CLIENT_STATUSES);
@@ -75,7 +76,7 @@ export const contactInputSchema = z.object({
   email: optEmail,
   phone: optStr(50),
   title: optStr(100),
-  isPrimary: z.coerce.boolean().default(false),
+  isPrimary: boolish(false),
 });
 export type ContactInput = z.output<typeof contactInputSchema>;
 

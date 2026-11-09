@@ -1,8 +1,17 @@
+import { orNotFound } from "@/lib/not-found";
 import Link from "next/link";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { requireActor } from "@/server/authz/session";
 import { can } from "@/server/authz/clients";
 import { getClient } from "@/server/services/clients";
+import { listProjectsForClient } from "@/server/services/projects";
+import { listFiles } from "@/server/services/files";
+import { canProject } from "@/server/authz/projects";
+import { formatCents } from "@/lib/money";
+import { ProjectStatusBadge, fmtDate } from "../../projects/status-badges";
+import { FileUploader } from "../../projects/[id]/file-uploader";
+import { deleteFileAction } from "../../projects/actions";
+import { DeleteButton } from "../../projects/[id]/delete-button";
 import { formatTax } from "@/lib/tax";
 import { StatusBadge } from "../status-badge";
 import {
@@ -39,13 +48,14 @@ export default async function ClientDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; error?: string }>;
 }) {
   const actor = await requireActor(["ADMIN", "STAFF"]);
   const { id } = await params;
   const sp = await searchParams;
   const tab = TABS.find(([k]) => k === sp.tab)?.[0] ?? "overview";
-  const c = await getClient(actor, id);
+  const c = await orNotFound(getClient(actor, id));
+  const errorKey = sp.error;
   const canWrite = can(actor.role, "client:write");
   const address = [
     c.addressLine1,
@@ -91,6 +101,11 @@ export default async function ClientDetailPage({
         </div>
       </div>
 
+      {errorKey === "has-projects" && (
+        <p role="alert" className="text-destructive text-sm">
+          This client has projects. Delete or finish those first.
+        </p>
+      )}
       <nav aria-label="Client sections" className="flex gap-1 overflow-x-auto border-b">
         {TABS.map(([k, label]) => (
           <Link
@@ -217,12 +232,86 @@ export default async function ClientDetailPage({
         </ol>
       )}
 
-      {["files", "projects", "invoices"].includes(tab) && (
-        <p className="text-muted-foreground rounded-md border p-6 text-sm">
-          {tab === "files" && "File storage arrives in Phase 3."}
-          {tab === "projects" && "Projects arrive in Phase 3."}
-          {tab === "invoices" && "Invoices arrive in Phase 4."}
-        </p>
+      {tab === "projects" && <ClientProjects actor={actor} clientId={id} />}
+      {tab === "files" && <ClientFiles actor={actor} clientId={id} canWrite={canWrite} />}
+      {tab === "invoices" && (
+        <p className="text-muted-foreground rounded-md border p-6 text-sm">Invoices arrive in Phase 4.</p>
+      )}
+    </div>
+  );
+}
+
+async function ClientProjects({
+  actor,
+  clientId,
+}: {
+  actor: Awaited<ReturnType<typeof requireActor>>;
+  clientId: string;
+}) {
+  const projects = await listProjectsForClient(actor, clientId);
+  return (
+    <div className="space-y-3">
+      {canProject(actor.role, "project:write") && (
+        <Link href={`/projects/new?clientId=${clientId}`} className={buttonVariants({ variant: "outline" })}>
+          New project
+        </Link>
+      )}
+      {projects.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No projects yet.</p>
+      ) : (
+        <ul className="divide-y rounded-md border text-sm">
+          {projects.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center gap-3 p-2">
+              <Link href={`/projects/${p.id}`} className="font-medium hover:underline">
+                {p.name}
+              </Link>
+              <ProjectStatusBadge status={p.status} />
+              <span className="text-muted-foreground">due {fmtDate(p.dueDate)}</span>
+              {p.budgetCents != null && (
+                <span className="text-muted-foreground ml-auto">{formatCents(p.budgetCents, p.currency)}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+async function ClientFiles({
+  actor,
+  clientId,
+  canWrite,
+}: {
+  actor: Awaited<ReturnType<typeof requireActor>>;
+  clientId: string;
+  canWrite: boolean;
+}) {
+  const files = await listFiles(actor, { clientId });
+  const path = `/clients/${clientId}`;
+  return (
+    <div className="max-w-3xl space-y-4">
+      {canWrite && <FileUploader clientId={clientId} revalidate={path} />}
+      {files.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No files yet.</p>
+      ) : (
+        <ul className="divide-y rounded-md border text-sm">
+          {files.map((f) => (
+            <li key={f.id} className="flex items-center gap-3 p-2">
+              <a href={`/api/files/${f.id}`} className="font-medium hover:underline">
+                {f.name}
+              </a>
+              <span className="text-muted-foreground">
+                {f.projectId ? "project file" : "client file"} · {(f.size / 1024 / 1024).toFixed(2)} MB
+              </span>
+              {canWrite && (
+                <div className="ml-auto">
+                  <DeleteButton action={deleteFileAction.bind(null, f.id, path)} label={`Delete ${f.name}?`} small />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

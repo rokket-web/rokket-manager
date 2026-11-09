@@ -4,6 +4,9 @@ export type Role = "ADMIN" | "STAFF" | "CLIENT";
 const AREAS: { prefix: string; roles: Role[] }[] = [
   { prefix: "/portal", roles: ["CLIENT"] },
   { prefix: "/settings/users", roles: ["ADMIN"] },
+  { prefix: "/projects/new", roles: ["ADMIN"] },
+  { prefix: "/projects", roles: ["ADMIN", "STAFF"] },
+  { prefix: "/time", roles: ["ADMIN", "STAFF"] },
   { prefix: "/clients/new", roles: ["ADMIN"] },
   { prefix: "/clients/import", roles: ["ADMIN"] },
   { prefix: "/clients", roles: ["ADMIN", "STAFF"] },
@@ -26,6 +29,8 @@ export type NavItem = { label: string; href: string; roles: Role[] };
 export const NAV: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", roles: ["ADMIN", "STAFF"] },
   { label: "Clients", href: "/clients", roles: ["ADMIN", "STAFF"] },
+  { label: "Projects", href: "/projects", roles: ["ADMIN", "STAFF"] },
+  { label: "Time", href: "/time", roles: ["ADMIN", "STAFF"] },
   { label: "Settings", href: "/settings", roles: ["ADMIN", "STAFF"] },
   { label: "Users", href: "/settings/users", roles: ["ADMIN"] },
   { label: "My Portal", href: "/portal", roles: ["CLIENT"] },

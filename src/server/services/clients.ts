@@ -2,7 +2,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db, withRetry } from "@/server/db";
 import { audit } from "@/server/audit";
 import { assertCan, clientScope, type ActorLike } from "@/server/authz/clients";
-import { NotFoundError } from "@/server/errors";
+import { ConflictError, NotFoundError } from "@/server/errors";
+import { getStorage } from "@/server/storage";
 import {
   clientInputSchema,
   contactInputSchema,
@@ -92,6 +93,18 @@ export async function listClients(actor: ActorLike, rawQuery: unknown) {
     pageCount: Math.max(1, Math.ceil(total / q.pageSize)),
     query: q,
   };
+}
+
+export async function listClientOptions(actor: ActorLike) {
+  assertCan(actor, "client:read");
+  return withRetry(() =>
+    db.client.findMany({
+      where: clientScope(actor),
+      orderBy: { name: "asc" },
+      take: 500,
+      select: { id: true, name: true },
+    }),
+  );
 }
 
 export async function listAllTags(actor: ActorLike) {
@@ -239,15 +252,26 @@ export async function setClientStatus(actor: ActorLike, id: string, rawStatus: u
 
 export async function deleteClient(actor: ActorLike, id: string) {
   assertCan(actor, "client:delete");
-  await db.$transaction(async (tx) => {
+  const keys = await db.$transaction(async (tx) => {
     const c = await tx.client.findFirst({ where: { AND: [{ id }, clientScope(actor)] }, select: { name: true } });
     if (!c) throw new NotFoundError("Client not found.");
+    if (await tx.project.count({ where: { clientId: id } })) {
+      throw new ConflictError("This client has projects. Delete or finish those first.");
+    }
+    const files = await tx.fileAsset.findMany({ where: { clientId: id }, select: { storageKey: true } });
     await audit(
       { actorId: actor.id, action: "client.delete", entity: "Client", entityId: id, meta: { name: c.name } },
       tx,
     );
     await tx.client.delete({ where: { id } });
+    return files.map((f) => f.storageKey);
   });
+  try {
+    const storage = getStorage();
+    await Promise.all(keys.map((k) => storage.remove(k)));
+  } catch {
+    /* storage not configured or transient failure; orphans are swept in Phase 6 */
+  }
 }
 
 // ---------- contacts ----------
