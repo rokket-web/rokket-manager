@@ -46,6 +46,7 @@ jobs:
       - run: npm ci
       - run: npx prisma migrate deploy
       - run: npm run db:seed
+      - run: npm run test:int
       - run: npx playwright install --with-deps chromium
       - run: npm run build
       - run: npm run e2e

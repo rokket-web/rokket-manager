@@ -22,7 +22,6 @@ function ask(question: string, hidden = false): Promise<string> {
       rl.close();
       if (hidden) process.stdout.write("\n");
       // strip bracketed-paste markers / control chars some web shells inject
-      // eslint-disable-next-line no-control-regex
       resolve(
         answer
           .replace(/\x1b\[20[01]~/g, "")
