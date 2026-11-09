@@ -22,6 +22,14 @@ describe("canAccessPath", () => {
   it("denies anonymous users on guarded paths", () => {
     for (const p of ["/dashboard", "/portal", "/settings"]) expect(canAccessPath(null, p)).toBe(false);
   });
+  it("limits client create/import pages to admin and the client area to internal roles", () => {
+    expect(canAccessPath("ADMIN", "/clients/new")).toBe(true);
+    expect(canAccessPath("STAFF", "/clients/new")).toBe(false);
+    expect(canAccessPath("STAFF", "/clients/import")).toBe(false);
+    expect(canAccessPath("STAFF", "/clients/abc")).toBe(true);
+    expect(canAccessPath("CLIENT", "/clients")).toBe(false);
+    expect(canAccessPath("CLIENT", "/clients/abc")).toBe(false);
+  });
   it("does not match look-alike prefixes", () => {
     expect(canAccessPath("CLIENT", "/portalx")).toBe(true); // not the portal area; unlisted
     expect(canAccessPath("CLIENT", "/dashboardx")).toBe(true);
@@ -30,8 +38,8 @@ describe("canAccessPath", () => {
 
 describe("navFor / homeFor", () => {
   it("shows role-appropriate navigation", () => {
-    expect(navFor("ADMIN").map((n) => n.label)).toEqual(["Dashboard", "Settings", "Users"]);
-    expect(navFor("STAFF").map((n) => n.label)).toEqual(["Dashboard", "Settings"]);
+    expect(navFor("ADMIN").map((n) => n.label)).toEqual(["Dashboard", "Clients", "Settings", "Users"]);
+    expect(navFor("STAFF").map((n) => n.label)).toEqual(["Dashboard", "Clients", "Settings"]);
     expect(navFor("CLIENT").map((n) => n.label)).toEqual(["My Portal"]);
   });
   it("routes each role home", () => {
