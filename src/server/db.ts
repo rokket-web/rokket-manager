@@ -1,16 +1,20 @@
 import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 // Neon scale-to-zero: keep the pool small, drop idle connections quickly, and
 // fail fast on connect so retries (below) can ride out a cold compute wake-up.
 function createClient() {
-  const adapter = new PrismaPg({
+  const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     max: 5,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 10_000,
   });
-  return new PrismaClient({ adapter });
+  // Neon closes idle connections (scale-to-zero / pooler). Without a listener,
+  // an idle-client ECONNRESET becomes an uncaught exception and kills the process.
+  pool.on("error", (err) => console.warn("[db] idle client error (ignored, will reconnect):", err.message));
+  return new PrismaClient({ adapter: new PrismaPg(pool) });
 }
 
 const globalForDb = globalThis as unknown as { prisma?: PrismaClient };

@@ -1,4 +1,6 @@
-import "dotenv/config";
+import { config } from "dotenv";
+config({ path: ".env.local", quiet: true });
+config({ quiet: true });
 import { hashPassword } from "better-auth/crypto";
 import { db } from "../src/server/db";
 

@@ -10,8 +10,7 @@ Project: **Rokket Management** (`aws-us-east-2`, Postgres 18).
 | `Dev`                  | Long-lived local development. **Must have no expiry** (see below). |
 | `ci-<run>-<attempt>`   | Created and deleted by GitHub Actions per CI run.                  |
 
-> Neon branches can carry an auto-delete expiry (TTL). Check the `Dev` branch in the Neon console
-> (Branches -> Dev) and make sure no expiration date is set, or it will be deleted.
+> The `Dev` branch had an auto-delete expiry; it was removed on 2026-11-09. Keep it unset.
 
 ## Connection strings
 

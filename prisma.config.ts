@@ -1,4 +1,6 @@
-import "dotenv/config";
+import { config } from "dotenv";
+config({ path: ".env.local", quiet: true });
+config({ quiet: true });
 import { defineConfig } from "prisma/config";
 
 // Migrations and the Prisma CLI use the DIRECT (non-pooled) Neon connection.

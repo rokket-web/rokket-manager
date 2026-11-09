@@ -1,3 +1,5 @@
+import { config } from "dotenv";
+config({ path: ".env.local", quiet: true });
 import { defineConfig } from "@playwright/test";
 
 const port = 3100;
