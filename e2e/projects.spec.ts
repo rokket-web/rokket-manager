@@ -143,3 +143,40 @@ test("files API: anonymous is redirected, unknown ids are 404 for staff", async 
   const res = await page.request.get("/api/files/does-not-exist", { maxRedirects: 0 });
   expect([404, 503]).toContain(res.status());
 });
+
+// Real browser upload to the bucket (exercises signed URLs + CORS). Skipped where no bucket is configured (e.g. CI).
+test("files: browser upload, download redirect and delete via the real bucket", async ({ page }) => {
+  test.skip(!process.env.GCS_BUCKET || !process.env.GOOGLE_SERVICE_ACCOUNT_FILE, "GCS not configured");
+  const fileName = `e2e-upload-${Date.now()}.txt`;
+  await login(page, "admin@rokket.test");
+  await page.goto("/projects?q=Website%20redesign");
+  await page.getByRole("link", { name: "Website redesign" }).click();
+  await page
+    .getByRole("navigation", { name: "Project sections" })
+    .getByRole("link", { name: "Files", exact: true })
+    .click();
+  await page.setInputFiles("#upload-file", {
+    name: fileName,
+    mimeType: "text/plain",
+    buffer: Buffer.from("hello from e2e"),
+  });
+  await page.getByRole("button", { name: "Upload", exact: true }).click();
+  const link = page.getByRole("link", { name: fileName });
+  await expect(link).toBeVisible({ timeout: 20_000 });
+
+  // Authorized download redirects to a short-lived signed URL, which serves the file as an attachment.
+  const href = await link.getAttribute("href");
+  const redirect = await page.request.get(href!, { maxRedirects: 0 });
+  expect(redirect.status()).toBe(302);
+  const signed = redirect.headers()["location"];
+  expect(signed).toContain("X-Goog-Signature");
+  const file = await page.request.get(signed);
+  expect(file.status()).toBe(200);
+  expect(await file.text()).toBe("hello from e2e");
+  expect(file.headers()["content-disposition"]).toContain("attachment");
+
+  // Delete removes it.
+  await page.getByRole("button", { name: "Delete" }).first().click();
+  await page.getByRole("button", { name: "Yes, delete" }).click();
+  await expect(page.getByRole("link", { name: fileName })).toHaveCount(0);
+});
