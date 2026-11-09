@@ -1,0 +1,57 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+        env: { DIRECT_URL: "postgresql://ci:ci@localhost/ci" }
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --audit-level=high
+
+  e2e:
+    # Runs against a disposable Neon branch created from the dev branch's parent.
+    # Needs repo secret NEON_API_KEY, repo variable NEON_PROJECT_ID, and secret SEED_PASSWORD.
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      SEED_PASSWORD: ${{ secrets.SEED_PASSWORD }}
+      BETTER_AUTH_SECRET: ci-only-secret-ci-only-secret-ci-only
+      BETTER_AUTH_URL: http://localhost:3100
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: neondatabase/create-branch-action@v6
+        id: branch
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          parent: production
+          branch_name: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          role: neondb_owner
+          database: neondb
+      - run: |
+          echo "DATABASE_URL=${{ steps.branch.outputs.db_url_with_pooler }}" >> $GITHUB_ENV
+          echo "DIRECT_URL=${{ steps.branch.outputs.db_url }}" >> $GITHUB_ENV
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm run db:seed
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run e2e
+      - if: always()
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          api_key: ${{ secrets.NEON_API_KEY }}
