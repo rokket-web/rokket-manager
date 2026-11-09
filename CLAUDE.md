@@ -34,6 +34,10 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
 - Next 16: `cacheComponents` is off (per-user dynamic pages). Middleware is `src/proxy.ts`.
 - Neon: branches `production`, `Dev`, per-run `ci-*`. PITR window currently 6h (review in Phase 6).
 
+## Deploy (Render)
+Build: `npm ci && npm run db:deploy && npm run build` (db:deploy = migrate with cold-start retries). Start: `npm start`.
+Health check: `/api/health`.
+
 ## Roadmap
 
 1 Foundation (current) | 2 Clients | 3 Projects | 4 Billing | 5 Portal | 6 Hardening/launch

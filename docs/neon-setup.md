@@ -24,7 +24,7 @@ Put both in `.env.local` (gitignored; `.env.example` documents every variable). 
 ## Local workflow
 
 1. `cp .env.example .env.local` and fill in the `Dev` branch URLs, `BETTER_AUTH_SECRET`, `SEED_PASSWORD`.
-2. `npx prisma migrate deploy` (apply committed migrations) or `npm run db:migrate` (create a new one).
+2. `npm run db:deploy` (apply committed migrations) or `npm run db:migrate` (create a new one).
 3. `npm run db:seed`, then `npm run dev`.
 4. Reset `Dev` to production's schema/data any time: Neon console -> Dev -> Reset from parent.
 
