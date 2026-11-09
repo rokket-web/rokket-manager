@@ -47,3 +47,12 @@ describe("normalizeTags", () => {
     expect(normalizeTags("A, a ,  B  c ,,")).toEqual(["a", "b c"]);
   });
 });
+
+describe("boolish form booleans", () => {
+  it('treats "false" as false (not truthy)', () => {
+    expect(contactInputSchema.parse({ firstName: "A", isPrimary: "false" }).isPrimary).toBe(false);
+    expect(contactInputSchema.parse({ firstName: "A", isPrimary: "true" }).isPrimary).toBe(true);
+    expect(contactInputSchema.parse({ firstName: "A", isPrimary: "on" }).isPrimary).toBe(true);
+    expect(contactInputSchema.parse({ firstName: "A" }).isPrimary).toBe(false);
+  });
+});
