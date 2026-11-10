@@ -32,24 +32,34 @@ export async function payInvoiceAction(id: string) {
   redirect(url);
 }
 
-async function respond(id: string, response: "ACCEPTED" | "DECLINED") {
+async function respond(id: string, response: "ACCEPTED" | "DECLINED" | "CHANGES_REQUESTED", fd: FormData) {
   const actor = await requireActor(["CLIENT"]);
   const path = `/portal/quotes/${id}`;
   const h = await headers();
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
+  const note = String(fd.get("note") ?? "");
   try {
-    await respondToPortalQuote(actor, id, response, { ip });
+    await respondToPortalQuote(actor, id, { response, note }, { ip });
   } catch (e) {
     if (e instanceof ConflictError) back(path, e.message);
     if (e instanceof NotFoundError) redirect("/portal/quotes");
     throw e;
   }
   revalidatePath("/portal", "layout");
-  back(path, undefined, response === "ACCEPTED" ? "Thank you. You accepted this quote." : "You declined this quote.");
+  back(
+    path,
+    undefined,
+    response === "ACCEPTED"
+      ? "Thank you. You accepted this quote."
+      : response === "DECLINED"
+        ? "You declined this quote."
+        : "Thank you. We have your requested changes and will send a revised quote.",
+  );
 }
 
-export const acceptQuoteAction = async (id: string) => respond(id, "ACCEPTED");
-export const declineQuoteAction = async (id: string) => respond(id, "DECLINED");
+export const acceptQuoteAction = async (id: string, fd: FormData) => respond(id, "ACCEPTED", fd);
+export const declineQuoteAction = async (id: string, fd: FormData) => respond(id, "DECLINED", fd);
+export const requestQuoteEditsAction = async (id: string, fd: FormData) => respond(id, "CHANGES_REQUESTED", fd);
 
 export async function sendPortalMessageAction(_prev: FormState, fd: FormData): Promise<FormState> {
   const actor = await requireActor(["CLIENT"]);

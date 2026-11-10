@@ -11,7 +11,7 @@ import { formatCents } from "@/lib/money";
 import { renderInvoicePdf, renderQuotePdf } from "./billing-docs";
 import { logClientActivity, resolveRecipient } from "./billing-core";
 import { getInvoice, markInvoiceSent } from "./invoices";
-import { getQuote, markQuoteSent } from "./quotes";
+import { getQuote, markQuoteRevisionSent, markQuoteSent } from "./quotes";
 
 export type SendResult = { emailed: boolean; to: string | null; error?: string };
 
@@ -104,17 +104,26 @@ export async function resendInvoice(actor: ActorLike, id: string): Promise<SendR
 
 // ---------- quotes ----------
 
-async function deliverQuote(actor: ActorLike, id: string, mailer: Mailer, to: string): Promise<void> {
+async function deliverQuote(
+  actor: ActorLike,
+  id: string,
+  mailer: Mailer,
+  to: string,
+  opts: { revised?: boolean; note?: string | null } = {},
+): Promise<void> {
   const { bytes, filename, quote, company } = await renderQuotePdf(actor, id);
   const lines = [
     `Hello ${quote.client.name},`,
-    `Please find quote ${quote.number}${quote.title ? ` (${quote.title})` : ""} attached. Total: ${formatCents(quote.totalCents, quote.currency)}, valid until ${fmtDateUtc(quote.validUntil)}.`,
+    opts.revised
+      ? `Thank you for your feedback. Please find the revised quote ${quote.number}${quote.title ? ` (${quote.title})` : ""} attached. Total: ${formatCents(quote.totalCents, quote.currency)}, valid until ${fmtDateUtc(quote.validUntil)}.`
+      : `Please find quote ${quote.number}${quote.title ? ` (${quote.title})` : ""} attached. Total: ${formatCents(quote.totalCents, quote.currency)}, valid until ${fmtDateUtc(quote.validUntil)}.`,
+    ...(opts.note ? [`Note from us: ${opts.note}`] : []),
     "Reply to this email to accept or ask any questions.",
     `Thank you,\n${company.name}`,
   ];
   await mailer.send({
     to,
-    subject: `Quote ${quote.number} from ${company.name}`,
+    subject: `${opts.revised ? "Revised quote" : "Quote"} ${quote.number} from ${company.name}`,
     text: lines.join("\n\n"),
     html: wrapHtml(lines.flatMap((l) => l.split("\n"))),
     replyTo: company.email,
@@ -140,6 +149,23 @@ export async function sendQuote(actor: ActorLike, id: string): Promise<SendResul
   } catch (e) {
     console.error("[quote email]", e instanceof Error ? e.name : e);
     return { emailed: false, to, error: "The quote was marked sent but the email failed. Use Resend email." };
+  }
+}
+
+/** The client asked for edits and the admin has revised the quote: mark it SENT again and email the new PDF. */
+export async function sendRevisedQuote(actor: ActorLike, id: string, rawNote: unknown): Promise<SendResult> {
+  assertBilling(actor, "billing:write");
+  const q = await getQuote(actor, id);
+  if (q.status !== "CHANGES_REQUESTED") throw new ConflictError("This quote is not waiting for a revision.");
+  const to = await recipientOrThrow(q.clientId, q.client.name);
+  const mailer = mailerOrThrow();
+  const { note } = await markQuoteRevisionSent(actor, id, rawNote);
+  try {
+    await deliverQuote(actor, id, mailer, to, { revised: true, note });
+    return { emailed: true, to };
+  } catch (e) {
+    console.error("[quote email]", e instanceof Error ? e.name : e);
+    return { emailed: false, to, error: "The revised quote was sent in the portal but the email failed. Use Resend email." };
   }
 }
 

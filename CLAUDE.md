@@ -80,6 +80,10 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
 - Known limitation: if a client pays by card after a manual payment covered the balance, the invoice shows overpaid
   (audit meta `overpaidCents`); refund it from the invoice page.
 - Client accept/decline links and the portal invoice views are Phase 5; for now the admin records quote responses.
+- Quote edit requests: a SENT quote can also be answered `CHANGES_REQUESTED` (note required) from the portal. The admin can edit it
+  (like a draft), then "Send revised quote" (`sendRevisedQuote`): keeps the number, back to SENT, re-emails the PDF, optional note to the client.
+  `QuoteNote` keeps the history (client answers + notes, admin revisions), shown on both the admin and portal quote pages. Accept/decline
+  also take an optional note.
 
 ## Portal (Phase 5)
 

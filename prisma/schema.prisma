@@ -444,6 +444,7 @@ enum QuoteStatus {
   ACCEPTED
   DECLINED
   EXPIRED
+  CHANGES_REQUESTED // client asked for edits; admin revises and re-sends
 }
 
 enum InvoiceStatus {
@@ -500,10 +501,25 @@ model Quote {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  lines QuoteLine[]
+  lines   QuoteLine[]
+  history QuoteNote[]
 
   @@index([clientId])
   @@index([status])
+}
+
+/// History of a quote's back-and-forth: each client response (with an optional note) and each revised re-send.
+model QuoteNote {
+  id         String   @id @default(cuid())
+  quoteId    String
+  quote      Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  authorId   String?
+  fromClient Boolean
+  action     String // accepted | declined | changes_requested | revised
+  body       String?
+  createdAt  DateTime @default(now())
+
+  @@index([quoteId, createdAt])
 }
 
 model QuoteLine {

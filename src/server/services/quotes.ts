@@ -6,6 +6,7 @@ import { assertBilling } from "@/server/authz/billing";
 import { ConflictError, NotFoundError } from "@/server/errors";
 import { formatCents } from "@/lib/money";
 import { billingListSchema, quoteInputSchema } from "@/lib/validation/billing";
+import { revisedQuoteNoteSchema } from "@/lib/validation/quote-response";
 import {
   assertProjectBelongsToClient,
   buildLines,
@@ -15,7 +16,7 @@ import {
   type Tx,
 } from "./billing-core";
 
-const QUOTE_STATUSES = ["DRAFT", "SENT", "ACCEPTED", "DECLINED", "EXPIRED"] as const;
+const QUOTE_STATUSES = ["DRAFT", "SENT", "ACCEPTED", "DECLINED", "EXPIRED", "CHANGES_REQUESTED"] as const;
 const VALID_DAYS = 30;
 
 export async function listQuotes(actor: ActorLike, rawQuery: unknown) {
@@ -101,7 +102,9 @@ export async function updateQuote(actor: ActorLike, id: string, raw: unknown) {
   return db.$transaction(async (tx) => {
     const before = await tx.quote.findUnique({ where: { id } });
     if (!before) throw new NotFoundError("Quote not found.");
-    if (before.status !== "DRAFT") throw new ConflictError("Only draft quotes can be edited.");
+    if (before.status !== "DRAFT" && before.status !== "CHANGES_REQUESTED") {
+      throw new ConflictError("Only draft quotes, or quotes the client asked to change, can be edited.");
+    }
     if (input.clientId !== before.clientId) throw new ConflictError("Cannot change the client of a quote.");
     await assertProjectBelongsToClient(tx, input.projectId, input.clientId);
     const calc = buildLines(input.lines, await resolveTaxRateBps(tx, input.clientId));
@@ -158,6 +161,51 @@ export async function markQuoteSent(actor: ActorLike, id: string) {
     await logClientActivity(tx, q.clientId, actor.id, "quote.sent", `Quote ${number} sent (${formatCents(q.totalCents, q.currency)})`);
     await audit({ actorId: actor.id, action: "quote.send", entity: "Quote", entityId: id, meta: { number } }, tx);
     return sent;
+  });
+}
+
+/** The back-and-forth on a quote: client responses and notes, and the admin's revised re-sends. Oldest first. */
+export async function getQuoteHistory(actor: ActorLike, quoteId: string) {
+  assertBilling(actor, "billing:read");
+  const rows = await withRetry(() =>
+    db.quoteNote.findMany({ where: { quoteId }, orderBy: { createdAt: "asc" }, take: 200 }),
+  );
+  const ids = [...new Set(rows.map((r) => r.authorId).filter((i): i is string => !!i))];
+  const users = ids.length ? await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+  const names = Object.fromEntries(users.map((u) => [u.id, u.name]));
+  return rows.map((r) => ({
+    id: r.id,
+    fromClient: r.fromClient,
+    action: r.action,
+    body: r.body,
+    createdAt: r.createdAt,
+    authorName: r.authorId ? (names[r.authorId] ?? "Unknown") : r.fromClient ? "Client" : "System",
+  }));
+}
+
+/**
+ * CHANGES_REQUESTED -> SENT with the (already edited) quote. Keeps the number; resets the answer; extends validity if it
+ * has lapsed. The optional note is shown to the client in the portal and in the email.
+ */
+export async function markQuoteRevisionSent(actor: ActorLike, id: string, rawNote: unknown) {
+  assertBilling(actor, "billing:write");
+  const { note } = revisedQuoteNoteSchema.parse({ note: rawNote ?? undefined });
+  return db.$transaction(async (tx) => {
+    const q = await tx.quote.findUnique({ where: { id }, include: { _count: { select: { lines: true } } } });
+    if (!q) throw new NotFoundError("Quote not found.");
+    if (q.status !== "CHANGES_REQUESTED") throw new ConflictError("This quote is not waiting for a revision.");
+    if (q._count.lines === 0) throw new ConflictError("A quote needs at least one line.");
+    const today = new Date();
+    const floor = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    const keep = q.validUntil && q.validUntil.getTime() >= floor ? q.validUntil : new Date(floor + VALID_DAYS * 86_400_000);
+    const sent = await tx.quote.update({
+      where: { id },
+      data: { status: "SENT", sentAt: new Date(), respondedAt: null, validUntil: keep },
+    });
+    await tx.quoteNote.create({ data: { quoteId: id, authorId: actor.id, fromClient: false, action: "revised", body: note ?? null } });
+    await logClientActivity(tx, q.clientId, actor.id, "quote.revised", `Revised quote ${q.number} sent (${formatCents(q.totalCents, q.currency)})`);
+    await audit({ actorId: actor.id, action: "quote.revise", entity: "Quote", entityId: id, meta: { number: q.number } }, tx);
+    return { quote: sent, note: note ?? null };
   });
 }
 
