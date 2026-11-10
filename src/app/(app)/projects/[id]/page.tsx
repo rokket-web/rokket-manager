@@ -23,6 +23,7 @@ import { PriorityBadge, ProjectStatusBadge, fmtDate } from "../status-badges";
 import { FileUploader } from "./file-uploader";
 import { TaskBoard } from "./task-board";
 import { ClientPortalTab } from "./client-portal-tab";
+import { BillingTab } from "./billing-tab";
 import { DeleteButton } from "./delete-button";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ const TABS = [
   ["time", "Time"],
   ["files", "Files"],
   ["team", "Team"],
+  ["billing", "Billing"],
   ["portal", "Client portal"],
 ] as const;
 const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
@@ -51,11 +53,12 @@ export default async function ProjectPage({
   const actor = await requireActor(["ADMIN", "STAFF"]);
   const { id } = await params;
   const sp = await searchParams;
-  const adminTabs = canProject(actor.role, "project:write");
-  const visibleTabs = TABS.filter(([k]) => k !== "portal" || adminTabs);
-  const tab = visibleTabs.find(([k]) => k === sp.tab)?.[0] ?? "overview";
   const dash = await orNotFound(getProjectDashboard(actor, id));
   const p = dash.project;
+  const adminTabs = canProject(actor.role, "project:write");
+  const flatFee = p.billingType === "FLAT_FEE";
+  const visibleTabs = TABS.filter(([k]) => (k !== "portal" || adminTabs) && (k !== "billing" || (adminTabs && flatFee)));
+  const tab = visibleTabs.find(([k]) => k === sp.tab)?.[0] ?? "overview";
   const isAdmin = canProject(actor.role, "project:write");
   const showMoney = canProject(actor.role, "money:read");
   const members = p.members.map((m) => m.user);
@@ -80,9 +83,11 @@ export default async function ProjectPage({
         </Link>
         {isAdmin && (
           <div className="ml-auto flex items-center gap-2">
-            <Link href={`/invoices/from-time?projectId=${id}`} className={buttonVariants({ variant: "outline" })}>
-              Invoice time
-            </Link>
+            {!flatFee && (
+              <Link href={`/invoices/from-time?projectId=${id}`} className={buttonVariants({ variant: "outline" })}>
+                Invoice time
+              </Link>
+            )}
             <Link href={`${base}/edit`} className={buttonVariants({ variant: "outline" })}>
               Edit
             </Link>
@@ -129,6 +134,13 @@ export default async function ProjectPage({
                     ? `of ${formatCents(money.budgetCents, p.currency)} budget (${money.budgetUsedPercent}%)`
                     : "No budget set"
                 }
+              />
+            )}
+            {showMoney && flatFee && (
+              <Stat
+                label="Flat fee"
+                value={formatCents(p.flatFeeCents ?? 0, p.currency)}
+                sub="Billed in installments (Billing tab)"
               />
             )}
             <Stat
@@ -243,6 +255,10 @@ export default async function ProjectPage({
             </section>
           )}
         </div>
+      )}
+
+      {tab === "billing" && isAdmin && flatFee && (
+        <BillingTab projectId={id} actor={actor} notice={sp.notice} error={sp.error} />
       )}
 
       {tab === "portal" && isAdmin && <ClientPortalTab projectId={id} actor={actor} />}

@@ -3,23 +3,25 @@ import { db, withRetry } from "@/server/db";
 import { audit } from "@/server/audit";
 import type { ActorLike } from "@/server/authz/clients";
 import { assertProject, canProject, projectScope } from "@/server/authz/projects";
-import { NotFoundError } from "@/server/errors";
+import { ConflictError, NotFoundError } from "@/server/errors";
+import { allocateInstallments } from "@/lib/installments";
 import { projectInputSchema, projectListSchema } from "@/lib/validation/project";
 import { getStorage } from "@/server/storage";
 
 
-/** Staff must never receive budget or rate data. */
-function stripMoney<T extends { budgetCents?: number | null; hourlyRateCents?: number | null }>(
+/** Staff must never receive budget, rate or flat-fee data. */
+function stripMoney<T extends { budgetCents?: number | null; hourlyRateCents?: number | null; flatFeeCents?: number | null }>(
   actor: ActorLike,
   p: T,
 ): T {
   if (canProject(actor.role, "money:read")) return p;
-  return { ...p, budgetCents: null, hourlyRateCents: null };
+  return { ...p, budgetCents: null, hourlyRateCents: null, flatFeeCents: null };
 }
 
 function columns(input: ReturnType<typeof projectInputSchema.parse>) {
-  const { budget, hourlyRate, ...rest } = input;
-  return { ...rest, budgetCents: budget, hourlyRateCents: hourlyRate };
+  const { budget, hourlyRate, flatFee, ...rest } = input;
+  // The flat fee only exists on flat-fee projects.
+  return { ...rest, budgetCents: budget, hourlyRateCents: hourlyRate, flatFeeCents: input.billingType === "FLAT_FEE" ? flatFee : null };
 }
 
 export async function listProjects(actor: ActorLike, rawQuery: unknown) {
@@ -150,6 +152,24 @@ export async function updateProject(actor: ActorLike, id: string, raw: unknown) 
     const input = projectInputSchema.parse({ ...(raw as object), clientId: before.clientId });
     const { clientId: _ignored, ...data } = columns(input);
     void _ignored;
+    // Billing type / flat fee changes must not disturb a billing plan that has already produced invoices.
+    const installments = await tx.billingInstallment.findMany({ where: { projectId: id }, orderBy: { position: "asc" } });
+    const started = installments.some((i) => i.invoiceId);
+    const feeChanged = data.billingType !== before.billingType || data.flatFeeCents !== before.flatFeeCents;
+    if (started && feeChanged) {
+      throw new ConflictError("Billing has already started on this project, so its billing type and flat fee can't change. Void the invoices first.");
+    }
+    if (feeChanged && installments.length > 0) {
+      if (data.billingType === "HOURLY") {
+        await tx.billingInstallment.deleteMany({ where: { projectId: id } }); // none invoiced: the plan has no purpose now
+      } else {
+        const re = allocateInstallments(data.flatFeeCents!, installments.map((i) => ({ basisPoints: i.basisPoints })));
+        if (!re.ok) throw new ConflictError(re.error);
+        for (const [n, i] of installments.entries()) {
+          await tx.billingInstallment.update({ where: { id: i.id }, data: { amountCents: re.amounts[n] } });
+        }
+      }
+    }
     const p = await tx.project.update({ where: { id }, data });
     if (before.status !== p.status) {
       await tx.activity.create({

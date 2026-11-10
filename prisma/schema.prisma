@@ -34,6 +34,11 @@ enum TaskStatus {
   DONE
 }
 
+enum BillingType {
+  HOURLY
+  FLAT_FEE
+}
+
 enum Priority {
   LOW
   MEDIUM
@@ -245,19 +250,23 @@ model Project {
   budgetCents     Int?
   currency        String        @default("USD")
   hourlyRateCents Int?
+  // HOURLY bills logged time; FLAT_FEE bills flatFeeCents in installments (BillingInstallment).
+  billingType     BillingType   @default(HOURLY)
+  flatFeeCents    Int?
   startDate       DateTime?     @db.Date
   dueDate         DateTime?     @db.Date
   visibleToClient Boolean       @default(false)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  members     ProjectMember[]
-  milestones  Milestone[]
-  tasks       Task[]
-  timeEntries TimeEntry[]
-  files       FileAsset[]
-  quotes      Quote[]
-  invoices    Invoice[]
+  members      ProjectMember[]
+  milestones   Milestone[]
+  tasks        Task[]
+  timeEntries  TimeEntry[]
+  files        FileAsset[]
+  quotes       Quote[]
+  invoices     Invoice[]
+  installments BillingInstallment[]
 
   @@index([clientId])
   @@index([status])
@@ -494,8 +503,9 @@ model Invoice {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  lines    InvoiceLine[]
-  payments Payment[]
+  lines       InvoiceLine[]
+  payments    Payment[]
+  installment BillingInstallment?
 
   @@index([clientId])
   @@index([status, dueDate])
@@ -544,4 +554,24 @@ model StripeEvent {
   id         String   @id
   type       String
   receivedAt DateTime @default(now())
+}
+
+/**
+ * One slice of a flat-fee project's price. basisPoints is the share of the fee (4000 = 40%); amountCents is stored
+ * so invoiced installments never change. Once invoiceId is set the row is locked; voiding/deleting the invoice frees it.
+ */
+model BillingInstallment {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  position    Int
+  label       String
+  basisPoints Int
+  amountCents Int
+  invoiceId   String?  @unique
+  invoice     Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([projectId, position])
 }

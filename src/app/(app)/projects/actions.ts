@@ -56,6 +56,7 @@ export async function updateProjectAction(id: string, _p: FormState, fd: FormDat
   try {
     await updateProject(actor, id, values);
   } catch (e) {
+    if (e instanceof ConflictError) return { error: e.message, values };
     return toFormState(e, values);
   }
   revalidatePath("/projects");

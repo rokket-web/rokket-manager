@@ -8,6 +8,11 @@ export const PROJECT_STATUS_OPTIONS = [
   { value: "CANCELLED", label: "Cancelled" },
 ];
 
+export const BILLING_TYPE_OPTIONS = [
+  { value: "HOURLY", label: "Hourly (bill logged time)" },
+  { value: "FLAT_FEE", label: "Flat fee (bill in installments)" },
+];
+
 export function projectFields(clients: { id: string; name: string }[] | null): Field[] {
   return [
     ...(clients
@@ -26,9 +31,11 @@ export function projectFields(clients: { id: string; name: string }[] | null): F
       : []),
     { name: "name", label: "Project name", required: true },
     { name: "status", label: "Status", type: "select", options: PROJECT_STATUS_OPTIONS },
+    { name: "billingType", label: "Billing", type: "select", options: BILLING_TYPE_OPTIONS },
+    { name: "flatFee", label: "Flat fee (USD)", hint: "Required for flat-fee projects, e.g. 12000" },
     { name: "description", label: "Description", type: "textarea" },
     { name: "budget", label: "Budget (USD)", hint: "Optional, e.g. 5000 or 5000.00" },
-    { name: "hourlyRate", label: "Hourly rate (USD)", hint: "Used for new time entries, e.g. 95" },
+    { name: "hourlyRate", label: "Hourly rate (USD)", hint: "Used for new time entries and hourly billing, e.g. 95" },
     { name: "startDate", label: "Start date", type: "date" },
     { name: "dueDate", label: "Due date", type: "date" },
   ];

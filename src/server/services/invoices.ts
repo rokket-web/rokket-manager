@@ -201,6 +201,8 @@ export async function voidInvoice(actor: ActorLike, id: string) {
     const paying = await tx.payment.count({ where: { invoiceId: id, status: { in: ["SUCCEEDED", "PENDING"] } } });
     if (paying > 0) throw new ConflictError("This invoice has payments. Refund them before voiding.");
     await tx.invoiceLine.updateMany({ where: { invoiceId: id }, data: { timeEntryId: null } });
+    // A voided installment invoice frees its installment so it can be invoiced again (amount is unchanged).
+    await tx.billingInstallment.updateMany({ where: { invoiceId: id }, data: { invoiceId: null } });
     const v = await tx.invoice.update({ where: { id }, data: { status: "VOID" } });
     await logClientActivity(tx, inv.clientId, actor.id, "invoice.void", `Invoice ${inv.number} voided`);
     await audit({ actorId: actor.id, action: "invoice.void", entity: "Invoice", entityId: id }, tx);
@@ -255,8 +257,11 @@ export async function createInvoiceFromTime(actor: ActorLike, raw: unknown) {
   assertBilling(actor, "billing:write");
   const input = fromTimeSchema.parse(raw);
   return db.$transaction(async (tx) => {
-    const project = await tx.project.findUnique({ where: { id: input.projectId }, select: { id: true, name: true, clientId: true } });
+    const project = await tx.project.findUnique({ where: { id: input.projectId }, select: { id: true, name: true, clientId: true, billingType: true } });
     if (!project) throw new NotFoundError("Project not found.");
+    if (project.billingType === "FLAT_FEE") {
+      throw new ConflictError("This is a flat-fee project. Invoice it from the Billing tab on the project instead.");
+    }
     const entries = await tx.timeEntry.findMany({
       where: {
         projectId: project.id,

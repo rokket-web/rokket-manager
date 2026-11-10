@@ -25,6 +25,8 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
           name: p.name,
           status: p.status,
           description: p.description ?? "",
+          billingType: p.billingType,
+          flatFee: p.flatFeeCents != null ? centsToDollarsInput(p.flatFeeCents) : "",
           budget: p.budgetCents != null ? centsToDollarsInput(p.budgetCents) : "",
           hourlyRate: p.hourlyRateCents != null ? centsToDollarsInput(p.hourlyRateCents) : "",
           startDate: iso(p.startDate),

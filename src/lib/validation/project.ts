@@ -46,6 +46,9 @@ const optId = z
   .optional()
   .transform((v) => (v ? v : null));
 
+export const BILLING_TYPES = ["HOURLY", "FLAT_FEE"] as const;
+export const MAX_FLAT_FEE_CENTS = 2_000_000_000; // keeps every installment inside Postgres INT
+
 export const PROJECT_STATUSES = ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "CANCELLED"] as const;
 export const TASK_STATUSES = ["TODO", "IN_PROGRESS", "REVIEW", "DONE"] as const;
 export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
@@ -59,12 +62,22 @@ export const projectInputSchema = z
     status: z.enum(PROJECT_STATUSES).default("PLANNING"),
     budget: moneyField,
     hourlyRate: moneyField,
+    billingType: z.enum(BILLING_TYPES).default("HOURLY"),
+    flatFee: moneyField,
     startDate: dateField,
     dueDate: dateField,
   })
   .refine((v) => !v.startDate || !v.dueDate || v.dueDate >= v.startDate, {
     path: ["dueDate"],
     message: "Due date must be on or after the start date",
+  })
+  .refine((v) => v.billingType !== "FLAT_FEE" || (v.flatFee !== null && v.flatFee > 0), {
+    path: ["flatFee"],
+    message: "Enter the flat fee for this project",
+  })
+  .refine((v) => v.flatFee === null || v.flatFee <= MAX_FLAT_FEE_CENTS, {
+    path: ["flatFee"],
+    message: "That fee is too large",
   });
 export type ProjectInput = z.output<typeof projectInputSchema>;
 

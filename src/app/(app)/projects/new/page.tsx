@@ -17,7 +17,7 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
       <FieldForm
         fields={projectFields(clients)}
         action={createProjectAction}
-        defaults={{ status: "PLANNING", clientId: clientId ?? "" }}
+        defaults={{ status: "PLANNING", billingType: "HOURLY", clientId: clientId ?? "" }}
         submitLabel="Create project"
         cancelHref="/projects"
         className="max-w-2xl"
