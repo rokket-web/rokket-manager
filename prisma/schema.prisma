@@ -169,6 +169,8 @@ model Client {
   portalUser User?
   projects   Project[]
   files      FileAsset[]
+  quotes     Quote[]
+  invoices   Invoice[]
 
   @@index([status])
   @@index([name])
@@ -254,6 +256,8 @@ model Project {
   tasks       Task[]
   timeEntries TimeEntry[]
   files       FileAsset[]
+  quotes      Quote[]
+  invoices    Invoice[]
 
   @@index([clientId])
   @@index([status])
@@ -331,23 +335,24 @@ model TaskComment {
 }
 
 model TimeEntry {
-  id          String    @id @default(cuid())
+  id          String       @id @default(cuid())
   projectId   String
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   taskId      String?
-  task        Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  task        Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
   userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   startedAt   DateTime
   // null while a timer is running. At most one running entry per user (partial unique index in the migration).
   endedAt     DateTime?
-  minutes     Int       @default(0)
+  minutes     Int          @default(0)
   description String?
-  billable    Boolean   @default(true)
+  billable    Boolean      @default(true)
   // Hourly rate in cents, snapshotted when the entry is created so later rate changes do not rewrite history.
-  rateCents   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  rateCents   Int          @default(0)
+  invoiceLine InvoiceLine?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   @@index([projectId, startedAt])
   @@index([userId, startedAt])
@@ -370,4 +375,173 @@ model FileAsset {
 
   @@index([clientId])
   @@index([projectId])
+}
+
+// ---------------------------------------------------------------------------
+// Billing (Phase 4). Money = integer cents + ISO currency. Quantities are
+// thousandths (1500 = 1.5) so hours can be fractional without floats.
+// Totals are computed by src/lib/billing.ts and stored; tax rate is snapshotted.
+// ---------------------------------------------------------------------------
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum PaymentMethod {
+  STRIPE
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+/**
+ * Gapless counters (invoice, quote). Incremented inside the creating transaction.
+ */
+model Sequence {
+  key   String @id
+  value Int    @default(0)
+}
+
+model Quote {
+  id            String      @id @default(cuid())
+  // Assigned when the quote is sent (gapless); null while DRAFT.
+  number        String?     @unique
+  clientId      String
+  client        Client      @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  projectId     String?
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  status        QuoteStatus @default(DRAFT)
+  currency      String      @default("USD")
+  title         String?
+  notes         String?
+  terms         String?
+  validUntil    DateTime?   @db.Date
+  taxRateBps    Int         @default(0)
+  subtotalCents Int         @default(0)
+  taxCents      Int         @default(0)
+  totalCents    Int         @default(0)
+  sentAt        DateTime?
+  respondedAt   DateTime?
+  // Unguessable token for the (Phase 5) client accept/decline link.
+  publicToken   String      @unique @default(cuid())
+  invoice       Invoice?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  lines QuoteLine[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model QuoteLine {
+  id             String  @id @default(cuid())
+  quoteId        String
+  quote          Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  position       Int
+  description    String
+  quantityMilli  Int     @default(1000)
+  unitPriceCents Int
+  taxable        Boolean @default(true)
+  amountCents    Int
+
+  @@index([quoteId, position])
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  // Assigned when the invoice is sent (gapless); null while DRAFT.
+  number        String?       @unique
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  projectId     String?
+  project       Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  quoteId       String?       @unique
+  quote         Quote?        @relation(fields: [quoteId], references: [id], onDelete: SetNull)
+  status        InvoiceStatus @default(DRAFT)
+  currency      String        @default("USD")
+  notes         String?
+  terms         String?
+  issueDate     DateTime?     @db.Date
+  // "Overdue" is derived: status SENT/PARTIALLY_PAID and dueDate in the past.
+  dueDate       DateTime?     @db.Date
+  taxRateBps    Int           @default(0)
+  subtotalCents Int           @default(0)
+  taxCents      Int           @default(0)
+  totalCents    Int           @default(0)
+  // Denormalised sum of SUCCEEDED payments minus refunds; updated with each payment write.
+  paidCents     Int           @default(0)
+  sentAt        DateTime?
+  paidAt        DateTime?
+  publicToken   String        @unique @default(cuid())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  lines    InvoiceLine[]
+  payments Payment[]
+
+  @@index([clientId])
+  @@index([status, dueDate])
+}
+
+model InvoiceLine {
+  id             String     @id @default(cuid())
+  invoiceId      String
+  invoice        Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position       Int
+  description    String
+  quantityMilli  Int        @default(1000)
+  unitPriceCents Int
+  taxable        Boolean    @default(true)
+  amountCents    Int
+  // Set when the line was generated from billable time; prevents double-billing.
+  timeEntryId    String?    @unique
+  timeEntry      TimeEntry? @relation(fields: [timeEntryId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId, position])
+}
+
+model Payment {
+  id                    String        @id @default(cuid())
+  invoiceId             String
+  invoice               Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  method                PaymentMethod
+  status                PaymentStatus @default(PENDING)
+  amountCents           Int
+  currency              String        @default("USD")
+  reference             String?
+  paidAt                DateTime?
+  // Stripe ids; unique so webhook retries are idempotent.
+  stripeSessionId       String?       @unique
+  stripePaymentIntentId String?       @unique
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([invoiceId])
+}
+
+/**
+ * Processed Stripe webhook event ids, for idempotency.
+ */
+model StripeEvent {
+  id         String   @id
+  type       String
+  receivedAt DateTime @default(now())
 }
