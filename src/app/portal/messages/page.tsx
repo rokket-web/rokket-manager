@@ -1,4 +1,4 @@
-import { Thread } from "@/components/messages/thread";
+import { LiveThread } from "@/components/messages/thread";
 import { requireActor } from "@/server/authz/session";
 import { getPortalThread, markPortalThreadRead } from "@/server/services/messages";
 import { sendPortalMessageAction } from "../actions";
@@ -14,7 +14,7 @@ export default async function PortalMessages() {
   return (
     <div className="max-w-2xl space-y-6">
       <h1 className="text-2xl font-semibold">Messages</h1>
-      <Thread messages={messages} mine="client" />
+      <LiveThread initial={messages.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() }))} mine="client" endpoint="/api/portal/messages" />
       <PortalMessageForm action={sendPortalMessageAction} />
     </div>
   );

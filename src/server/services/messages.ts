@@ -51,6 +51,29 @@ export async function getAdminThread(actor: ActorLike, clientId: string) {
   return { messages, names, hasPortalAccess: !!portalUser };
 }
 
+export type ThreadMessageView = { id: string; fromClient: boolean; body: string; createdAt: string; senderName: string };
+
+/**
+ * Live polling for an open admin thread: messages at or after `after` (the caller de-dupes by id).
+ * Anything the client sent is marked read here, because this is only called while the thread is on screen.
+ */
+export async function getAdminMessagesSince(actor: ActorLike, clientId: string, after: Date): Promise<ThreadMessageView[]> {
+  assertCan(actor, "client:write");
+  await requireClientName(clientId);
+  const rows = await withRetry(() =>
+    db.message.findMany({ where: { clientId, createdAt: { gte: after } }, orderBy: { createdAt: "asc" }, take: THREAD_LIMIT }),
+  );
+  if (rows.some((m) => m.fromClient && !m.readAt)) await markThreadReadByAdmin(actor, clientId);
+  const names = await authorNames(rows.map((m) => m.authorId));
+  return rows.map((m) => ({
+    id: m.id,
+    fromClient: m.fromClient,
+    body: m.body,
+    createdAt: m.createdAt.toISOString(),
+    senderName: m.authorId ? (names[m.authorId] ?? "Unknown") : "System",
+  }));
+}
+
 /** Marks everything the client sent as read by an admin. Called when an admin opens the thread. */
 export async function markThreadReadByAdmin(actor: ActorLike, clientId: string) {
   assertCan(actor, "client:write");
@@ -122,6 +145,28 @@ export async function getPortalThread(actor: ActorLike) {
     fromClient: m.fromClient,
     body: m.body,
     createdAt: m.createdAt,
+    senderName: m.fromClient ? "You" : ((m.authorId && names[m.authorId]) || "Our team"),
+  }));
+}
+
+/** Live polling for the client's open thread. Same scoping as getPortalThread; incoming admin messages are marked read. */
+export async function getPortalMessagesSince(actor: ActorLike, after: Date): Promise<ThreadMessageView[]> {
+  const clientId = portalClientId(actor);
+  const rows = await withRetry(() =>
+    db.message.findMany({
+      where: { clientId, createdAt: { gte: after } },
+      orderBy: { createdAt: "asc" },
+      take: THREAD_LIMIT,
+      select: { id: true, fromClient: true, body: true, createdAt: true, authorId: true, readAt: true },
+    }),
+  );
+  if (rows.some((m) => !m.fromClient && !m.readAt)) await markPortalThreadRead(actor);
+  const names = await authorNames(rows.filter((m) => !m.fromClient).map((m) => m.authorId));
+  return rows.map((m) => ({
+    id: m.id,
+    fromClient: m.fromClient,
+    body: m.body,
+    createdAt: m.createdAt.toISOString(),
     senderName: m.fromClient ? "You" : ((m.authorId && names[m.authorId]) || "Our team"),
   }));
 }

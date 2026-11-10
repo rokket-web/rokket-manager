@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ENTER_HINT, enterToSend } from "@/components/messages/enter-to-send";
 import type { FormState } from "../form-state";
 
 type Action = (prev: FormState, fd: FormData) => Promise<FormState>;
@@ -35,7 +36,16 @@ export function MessageForm({ action, disabled }: { action: Action; disabled?: b
   return (
     <form ref={ref} action={formAction} className="space-y-2">
       <Label htmlFor="message-body">Message</Label>
-      <Textarea id="message-body" name="body" rows={3} required maxLength={5000} disabled={disabled} />
+      <Textarea
+        id="message-body"
+        name="body"
+        rows={3}
+        required
+        maxLength={5000}
+        disabled={disabled}
+        onKeyDown={(e) => enterToSend(e, pending)}
+      />
+      <p className="text-muted-foreground text-xs">{ENTER_HINT}</p>
       <Feedback state={state} field="body" />
       <Button type="submit" size="sm" disabled={pending || disabled}>
         {pending ? "Sending..." : "Send message"}
