@@ -36,6 +36,15 @@ const CLIENTS: [string, "LEAD" | "ACTIVE" | "PAST", string, string, number | nul
 const FIRST = ["Alex", "Jordan", "Taylor", "Morgan", "Riley", "Casey", "Avery", "Quinn", "Parker", "Reese"];
 const LAST = ["Nguyen", "Patel", "Garcia", "Smith", "Johnson", "Lee", "Brown", "Martinez", "Kim", "Davis"];
 
+/** The seeded portal user belongs to Acme Plumbing so the portal is usable in dev. Never overrides an existing link. */
+async function linkSeedPortalUser() {
+  const [user, client] = await Promise.all([
+    db.user.findUnique({ where: { email: "client@rokket.test" } }),
+    db.client.findFirst({ where: { name: "Acme Plumbing" } }),
+  ]);
+  if (user && client && !user.clientId) await db.user.update({ where: { id: user.id }, data: { clientId: client.id } });
+}
+
 async function seedClients() {
   const admin = await db.user.findUnique({ where: { email: "admin@rokket.test" } });
   let created = 0;
@@ -220,6 +229,7 @@ async function main() {
       });
   }
   await seedClients();
+  await linkSeedPortalUser();
   await seedProjects();
   await db.setting.upsert({
     where: { key: "defaultTaxRateBps" },

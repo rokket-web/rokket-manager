@@ -37,7 +37,9 @@ export const NAV: NavItem[] = [
   { label: "Invoices", href: "/invoices", roles: ["ADMIN"] },
   { label: "Settings", href: "/settings", roles: ["ADMIN", "STAFF"] },
   { label: "Users", href: "/settings/users", roles: ["ADMIN"] },
-  { label: "My Portal", href: "/portal", roles: ["CLIENT"] },
+  { label: "Overview", href: "/portal", roles: ["CLIENT"] },
+  { label: "Quotes", href: "/portal/quotes", roles: ["CLIENT"] },
+  { label: "Invoices", href: "/portal/invoices", roles: ["CLIENT"] },
 ];
 
 export function navFor(role: Role): NavItem[] {

@@ -33,9 +33,14 @@ function toParty(c: ClientAddr) {
   };
 }
 
-export async function renderInvoicePdf(actor: ActorLike, id: string) {
-  const inv = await getInvoice(actor, id);
-  const company = await readCompanyProfile();
+type InvoiceForPdf = Awaited<ReturnType<typeof getInvoice>>;
+type QuoteForPdf = Awaited<ReturnType<typeof getQuote>>;
+
+/** Pure: build the PDF for an already-authorised, already-loaded invoice (admin or the owning portal client). */
+export async function invoicePdfBytes(
+  inv: Pick<InvoiceForPdf, "number" | "currency" | "client" | "issueDate" | "dueDate" | "lines" | "taxRateBps" | "subtotalCents" | "taxCents" | "totalCents" | "paidCents" | "notes" | "terms">,
+  company: CompanyProfile,
+) {
   const data: PdfDocData = {
     kind: "INVOICE",
     number: inv.number,
@@ -57,12 +62,13 @@ export async function renderInvoicePdf(actor: ActorLike, id: string) {
     terms: inv.terms,
     footer: company.paymentInstructions,
   };
-  return { bytes: await renderPdf(data), filename: `${inv.number ?? "invoice-draft"}.pdf`, inv, company };
+  return renderPdf(data);
 }
 
-export async function renderQuotePdf(actor: ActorLike, id: string) {
-  const q = await getQuote(actor, id);
-  const company = await readCompanyProfile();
+export async function quotePdfBytes(
+  q: Pick<QuoteForPdf, "number" | "title" | "currency" | "client" | "sentAt" | "createdAt" | "validUntil" | "lines" | "taxRateBps" | "subtotalCents" | "taxCents" | "totalCents" | "notes" | "terms">,
+  company: CompanyProfile,
+) {
   const data: PdfDocData = {
     kind: "QUOTE",
     number: q.number,
@@ -83,5 +89,17 @@ export async function renderQuotePdf(actor: ActorLike, id: string) {
     terms: q.terms,
     footer: null,
   };
-  return { bytes: await renderPdf(data), filename: `${q.number ?? "quote-draft"}.pdf`, quote: q, company };
+  return renderPdf(data);
+}
+
+export async function renderInvoicePdf(actor: ActorLike, id: string) {
+  const inv = await getInvoice(actor, id);
+  const company = await readCompanyProfile();
+  return { bytes: await invoicePdfBytes(inv, company), filename: `${inv.number ?? "invoice-draft"}.pdf`, inv, company };
+}
+
+export async function renderQuotePdf(actor: ActorLike, id: string) {
+  const q = await getQuote(actor, id);
+  const company = await readCompanyProfile();
+  return { bytes: await quotePdfBytes(q, company), filename: `${q.number ?? "quote-draft"}.pdf`, quote: q, company };
 }
