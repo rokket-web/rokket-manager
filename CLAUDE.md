@@ -99,6 +99,15 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
   Comments and files have `visibleToClient` columns but are intentionally not exposed in the portal yet.
 - Seed links `client@rokket.test` to Acme Plumbing. e2e DB setup uses plain SQL (`e2e/helpers/db.ts`, refuses production).
 
+## Messaging and client email
+
+- `Message` is one running thread per client (`src/server/services/messages.ts`). Admin side: `client:write` (admin only), "Messages" tab on
+  the client page. Portal side: `/portal/messages`, scoped by `portalClientId(actor)`; portal reads select explicit fields and return
+  display names, never user ids. `readAt` = when the OTHER side first saw it.
+- New messages email a notification WITHOUT the message text (clients: their portal user; client messages: all active admins).
+  Only the first message in an unread run notifies, so bursts are one email. Replies are portal-only (no inbound email).
+- Each side is rate limited to 20 messages/hour. Free-form admin email: `client-email.ts` (Email tab), logged to the timeline and audit log, 30/hour.
+
 ## Deploy (Render)
 
 Build: `npm ci && npm run db:deploy && npm run build` (db:deploy = migrate with cold-start retries). Start: `npm start`.

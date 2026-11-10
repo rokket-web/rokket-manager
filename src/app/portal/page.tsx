@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatCents } from "@/lib/money";
 import { requireActor } from "@/server/authz/session";
 import { getPortalSummary } from "@/server/services/portal";
+import { portalUnreadCount } from "@/server/services/messages";
 
 export const metadata = { title: "Client Portal" };
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function PortalHome({ searchParams }: { searchParams: Promise<{ invited?: string }> }) {
   const actor = await requireActor(["CLIENT"]);
   const { invited } = await searchParams;
-  const s = await getPortalSummary(actor);
+  const [s, unreadMessages] = await Promise.all([getPortalSummary(actor), portalUnreadCount(actor)]);
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -32,6 +33,9 @@ export default async function PortalHome({ searchParams }: { searchParams: Promi
         </Card>
         <Card href="/portal/quotes" label="Quotes to review" value={String(s.quotesAwaiting)}>
           {s.quotesAwaiting === 0 ? "Nothing waiting" : "Waiting for your answer"}
+        </Card>
+        <Card href="/portal/messages" label="Messages" value={String(unreadMessages)}>
+          {unreadMessages === 0 ? "No unread messages" : "Unread from our team"}
         </Card>
       </div>
     </div>

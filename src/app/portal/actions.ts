@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { requireActor } from "@/server/authz/session";
 import { ConflictError, NotFoundError } from "@/server/errors";
 import { StripeNotConfiguredError } from "@/server/stripe";
+import { sendPortalMessage } from "@/server/services/messages";
+import { toFormState, type FormState } from "@/app/(app)/clients/form-state";
 import { respondToPortalQuote, startPortalCheckout } from "@/server/services/portal";
 
 const back = (path: string, error?: string, notice?: string) => {
@@ -48,3 +50,15 @@ async function respond(id: string, response: "ACCEPTED" | "DECLINED") {
 
 export const acceptQuoteAction = async (id: string) => respond(id, "ACCEPTED");
 export const declineQuoteAction = async (id: string) => respond(id, "DECLINED");
+
+export async function sendPortalMessageAction(_prev: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor(["CLIENT"]);
+  try {
+    await sendPortalMessage(actor, { body: String(fd.get("body") ?? "") });
+  } catch (e) {
+    if (e instanceof ConflictError) return { error: e.message };
+    return toFormState(e);
+  }
+  revalidatePath("/portal", "layout");
+  return { ok: true };
+}

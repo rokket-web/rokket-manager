@@ -7,6 +7,7 @@ import {
   FileText,
   Home,
   LayoutDashboard,
+  MessageSquare,
   Receipt,
   Settings,
   UserCog,
@@ -23,6 +24,7 @@ const ICONS: Record<string, LucideIcon> = {
   Time: Clock,
   Quotes: FileText,
   Invoices: Receipt,
+  Messages: MessageSquare,
   Settings: Settings,
   Users: UserCog,
 };

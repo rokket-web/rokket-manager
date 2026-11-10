@@ -18,6 +18,8 @@ import {
   type ImportResult,
 } from "@/server/services/clients";
 import { headers } from "next/headers";
+import { sendClientEmail } from "@/server/services/client-email";
+import { sendAdminMessage } from "@/server/services/messages";
 import { inviteClientUser, resendPortalInvite, setPortalActive } from "@/server/services/portal-access";
 import { formToObject, toFormState, type FormState } from "./form-state";
 
@@ -173,4 +175,29 @@ export async function setPortalActiveAction(clientId: string, active: boolean) {
   await setPortalActive(actor, clientId, active);
   revalidatePath(`/clients/${clientId}`);
   portalBack(clientId, undefined, active ? "Portal access restored." : "Portal access turned off and sessions ended.");
+}
+
+export async function sendMessageAction(clientId: string, _prev: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor(["ADMIN"]);
+  try {
+    const r = await sendAdminMessage(actor, clientId, formToObject(fd));
+    revalidatePath(`/clients/${clientId}`);
+    return { ok: true, notice: r.note };
+  } catch (e) {
+    if (e instanceof ConflictError) return { error: e.message };
+    return toFormState(e);
+  }
+}
+
+export async function sendEmailAction(clientId: string, _prev: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor(["ADMIN"]);
+  const values = formToObject(fd);
+  try {
+    const { to } = await sendClientEmail(actor, clientId, values);
+    revalidatePath(`/clients/${clientId}`);
+    return { ok: true, notice: `Email sent to ${to}.` };
+  } catch (e) {
+    if (e instanceof ConflictError) return { error: e.message, values };
+    return toFormState(e, values);
+  }
 }
