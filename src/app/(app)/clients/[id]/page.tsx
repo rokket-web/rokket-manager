@@ -92,6 +92,12 @@ export default async function ClientDetailPage({
                   Update
                 </Button>
               </form>
+              <Link href={`/quotes/new?clientId=${id}`} className={buttonVariants({ variant: "outline" })}>
+                New quote
+              </Link>
+              <Link href={`/invoices/new?clientId=${id}`} className={buttonVariants({ variant: "outline" })}>
+                New invoice
+              </Link>
               <Link href={`/clients/${id}/edit`} className={buttonVariants({ variant: "outline" })}>
                 Edit
               </Link>
