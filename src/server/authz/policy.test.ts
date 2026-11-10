@@ -14,6 +14,9 @@ describe("canAccessPath", () => {
     expect(canAccessPath("ADMIN", "/settings/users")).toBe(true);
     expect(canAccessPath("STAFF", "/settings/users")).toBe(false);
     expect(canAccessPath("CLIENT", "/settings/users")).toBe(false);
+    expect(canAccessPath("ADMIN", "/settings/email-log")).toBe(true);
+    expect(canAccessPath("STAFF", "/settings/email-log")).toBe(false);
+    expect(canAccessPath("CLIENT", "/settings/email-log")).toBe(false);
   });
   it("keeps clients out of every internal area", () => {
     for (const p of ["/dashboard", "/settings", "/settings/users"]) expect(canAccessPath("CLIENT", p)).toBe(false);
@@ -68,8 +71,8 @@ describe("navFor / homeFor", () => {
       "Time",
       "Quotes",
       "Invoices",
-      "Settings",
       "Users",
+      "Settings",
     ]);
     expect(navFor("STAFF").map((n) => n.label)).toEqual(["Dashboard", "Clients", "Projects", "Time", "Settings"]);
     expect(navFor("CLIENT").map((n) => n.label)).toEqual(["Overview", "Projects", "Quotes", "Invoices", "Messages"]);

@@ -4,7 +4,7 @@ import { portalClientId } from "@/server/authz/portal";
 import { appBaseUrl } from "@/server/app-url";
 import { db, withRetry } from "@/server/db";
 import { ConflictError, NotFoundError } from "@/server/errors";
-import { MailNotConfiguredError, getMailer } from "@/server/mail";
+import { MailNotConfiguredError, getMailer, type MailLogMeta } from "@/server/mail";
 import { paragraphsHtml } from "@/server/mail/html";
 import { messageInputSchema } from "@/lib/validation/messages";
 import { readCompanyProfile } from "./settings";
@@ -97,6 +97,7 @@ export async function sendAdminMessage(actor: ActorLike, clientId: string, raw: 
       `Read and reply: ${appBaseUrl()}/portal/messages`,
     ],
     replyTo: null,
+    log: { kind: "message_notice", clientId, triggeredById: actor.id },
   });
   return sent ? { notified: true } : { notified: false, note: "The message was saved, but the notification email could not be sent." };
 }
@@ -162,12 +163,13 @@ export async function sendPortalMessage(actor: ActorLike, raw: unknown): Promise
         `Read and reply: ${appBaseUrl()}/clients/${clientId}?tab=messages`,
       ],
       replyTo: null,
+      log: { kind: "admin_notice", clientId, triggeredById: actor.id },
     });
   }
 }
 
 /** Notification email: never includes the message text. Failures are logged, never thrown. */
-async function trySend(m: { to: string; subject: string; lines: string[]; replyTo: string | null }): Promise<boolean> {
+async function trySend(m: { to: string; subject: string; lines: string[]; replyTo: string | null; log: MailLogMeta }): Promise<boolean> {
   try {
     await getMailer().send({
       to: m.to,
@@ -175,6 +177,7 @@ async function trySend(m: { to: string; subject: string; lines: string[]; replyT
       text: m.lines.join("\n\n"),
       html: paragraphsHtml(m.lines),
       replyTo: m.replyTo,
+      log: m.log,
     });
     return true;
   } catch (e) {

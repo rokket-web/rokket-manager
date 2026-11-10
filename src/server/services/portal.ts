@@ -200,7 +200,7 @@ export async function respondToPortalQuote(
     );
     return { number: q.number, title: q.title, totalCents: q.totalCents, currency: q.currency, by: user?.name ?? "The client" };
   });
-  void notifyQuoteResponse(response, result);
+  void notifyQuoteResponse(response, result, clientId);
   return result;
 }
 
@@ -208,6 +208,7 @@ export async function respondToPortalQuote(
 async function notifyQuoteResponse(
   response: "ACCEPTED" | "DECLINED",
   q: { number: string | null; title: string | null; totalCents: number; currency: string; by: string },
+  clientId: string,
 ) {
   try {
     const company = await readCompanyProfile();
@@ -217,6 +218,7 @@ async function notifyQuoteResponse(
       to: company.email,
       subject: `Quote ${q.number} ${verb}`,
       text: `${q.by} ${verb} quote ${q.number}${q.title ? ` (${q.title})` : ""} for ${formatCents(q.totalCents, q.currency)} in the client portal.`,
+      log: { kind: "quote_response", clientId },
     });
   } catch {
     /* mail not configured or provider down: the activity timeline still has it */

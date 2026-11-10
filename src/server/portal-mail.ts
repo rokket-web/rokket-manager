@@ -51,5 +51,6 @@ export async function sendPortalLink(email: string, url: string): Promise<void> 
       )
       .join("")}</div>`,
     replyTo: company.email,
+    log: { kind: "portal_link", clientId: user.clientId },
   });
 }

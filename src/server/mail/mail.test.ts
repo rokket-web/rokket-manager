@@ -21,6 +21,12 @@ describe("mailgun mailer", () => {
     expect((form.get("attachment") as File).name).toBe("INV-0001.pdf");
   });
 
+  it("returns Mailgun's message id so webhook events can be matched", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: "<abc@mg.example.com>", message: "Queued." }), { status: 200 }));
+    const receipt = await createMailgunMailer(cfg, fetchMock as unknown as typeof fetch).send({ to: "a@b.com", subject: "s", text: "t" });
+    expect(receipt).toEqual({ id: "<abc@mg.example.com>" });
+  });
+
   it("throws a delivery error without leaking the key or response body", async () => {
     const fetchMock = vi.fn(async () => new Response("key-secret leaked", { status: 401 }));
     const err = await createMailgunMailer(cfg, fetchMock as unknown as typeof fetch)

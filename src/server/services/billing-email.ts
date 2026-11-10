@@ -57,6 +57,7 @@ async function deliverInvoice(actor: ActorLike, id: string, mailer: Mailer, to: 
       (link ? `<p style="font-family:Arial,sans-serif;font-size:14px"><a href="${escapeHtml(link)}">Pay this invoice online</a></p>` : ""),
     replyTo: company.email,
     attachments: [{ filename, content: bytes, contentType: "application/pdf" }],
+    log: { kind: "invoice", clientId: inv.clientId, triggeredById: actor.id },
   });
   await db.$transaction(async (tx) => {
     await logClientActivity(tx, inv.clientId, actor.id, "invoice.emailed", `Invoice ${inv.number} emailed to ${to}`);
@@ -118,6 +119,7 @@ async function deliverQuote(actor: ActorLike, id: string, mailer: Mailer, to: st
     html: wrapHtml(lines.flatMap((l) => l.split("\n"))),
     replyTo: company.email,
     attachments: [{ filename, content: bytes, contentType: "application/pdf" }],
+    log: { kind: "quote", clientId: quote.clientId, triggeredById: actor.id },
   });
   await db.$transaction(async (tx) => {
     await logClientActivity(tx, quote.clientId, actor.id, "quote.emailed", `Quote ${quote.number} emailed to ${to}`);

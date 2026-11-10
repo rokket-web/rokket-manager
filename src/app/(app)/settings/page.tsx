@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireActor } from "@/server/authz/session";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
 import { FieldForm } from "@/components/forms/field-form";
@@ -25,6 +26,17 @@ export default async function SettingsPage() {
         <h2 className="font-medium">Appearance</h2>
         <ThemeToggle />
       </section>
+      {actor.role === "ADMIN" && (
+        <section className="space-y-1">
+          <h2 className="font-medium">Email</h2>
+          <p className="text-muted-foreground text-sm">
+            See every email the app sent and whether it was delivered.{" "}
+            <Link href="/settings/email-log" className="text-foreground underline">
+              Open the email log
+            </Link>
+          </p>
+        </section>
+      )}
       {billing && (
         <section className="space-y-2">
           <h2 className="font-medium">Billing</h2>
