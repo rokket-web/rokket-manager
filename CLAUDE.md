@@ -108,6 +108,15 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
   Only the first message in an unread run notifies, so bursts are one email. Replies are portal-only (no inbound email).
 - Each side is rate limited to 20 messages/hour. Free-form admin email: `client-email.ts` (Email tab), logged to the timeline and audit log, 30/hour.
 
+## Email log
+
+- `getMailer()` wraps every send: a row per email in `EmailLog` (kind, recipient, subject, status; never the body or attachments).
+  Pass `log: { kind, clientId, triggeredById }` on each `send()`. Logging failures never break a send. Tests that inject a mailer
+  (`setMailerForTests`) bypass logging.
+- Statuses: SENT (Mailgun accepted) -> DELIVERED / BOUNCED / COMPLAINED via `/api/webhooks/mailgun`; FAILED = rejected at send time.
+  The webhook verifies Mailgun's HMAC (`MAILGUN_WEBHOOK_SIGNING_KEY`, 15 min freshness) and status only moves forward. See `docs/mailgun-webhooks.md`.
+- Admin UI: Settings -> Email log (`/settings/email-log`, admin only) and "Recent emails" on each client's Email tab.
+
 ## Deploy (Render)
 
 Build: `npm ci && npm run db:deploy && npm run build` (db:deploy = migrate with cold-start retries). Start: `npm start`.

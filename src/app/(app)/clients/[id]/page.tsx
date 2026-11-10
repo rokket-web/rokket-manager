@@ -22,6 +22,9 @@ import { listQuotes } from "@/server/services/quotes";
 import { getPortalAccess } from "@/server/services/portal-access";
 import { getAdminThread, markThreadReadByAdmin, unreadFromClientCount } from "@/server/services/messages";
 import { getClientEmailRecipient } from "@/server/services/client-email";
+import { listClientEmails } from "@/server/services/email-log";
+import { EmailStatusBadge } from "@/components/email/status-badge";
+import { emailKindLabel } from "@/lib/email-events";
 import { Thread } from "@/components/messages/thread";
 import {
   addContactAction,
@@ -522,7 +525,7 @@ async function MessagesTab({ actor, clientId }: { actor: Awaited<ReturnType<type
 }
 
 async function EmailTab({ actor, clientId }: { actor: Awaited<ReturnType<typeof requireActor>>; clientId: string }) {
-  const to = await getClientEmailRecipient(actor, clientId);
+  const [to, history] = await Promise.all([getClientEmailRecipient(actor, clientId), listClientEmails(actor, clientId)]);
   return (
     <div className="max-w-2xl space-y-3">
       <p className="text-muted-foreground text-xs">
@@ -535,6 +538,32 @@ async function EmailTab({ actor, clientId }: { actor: Awaited<ReturnType<typeof 
           This client has no email address yet. Add one on the client or a contact first.
         </p>
       )}
+      <section className="space-y-2 pt-4">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-medium">Recent emails to this client</h2>
+          <Link href={`/settings/email-log?client=${clientId}`} className="text-muted-foreground text-xs hover:underline">
+            View all
+          </Link>
+        </div>
+        {history.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Nothing sent yet.</p>
+        ) : (
+          <ul className="divide-y rounded-md border text-sm">
+            {history.map((h) => (
+              <li key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 p-2">
+                <span className="font-medium">{h.subject}</span>
+                <span className="text-muted-foreground text-xs">
+                  {emailKindLabel(h.kind)} · {h.toEmail} · {fmt(h.createdAt)}
+                </span>
+                <span className="ml-auto">
+                  <EmailStatusBadge status={h.status} />
+                </span>
+                {h.detail && <span className="text-muted-foreground w-full text-xs">{h.detail}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

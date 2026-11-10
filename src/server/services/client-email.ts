@@ -40,7 +40,7 @@ export async function sendClientEmail(actor: ActorLike, clientId: string, raw: u
   const company = await readCompanyProfile();
   const lines = [...body.split(/\r?\n/), "", company.name];
   try {
-    await mailer.send({ to, subject, text: lines.join("\n"), html: paragraphsHtml(lines), replyTo: company.email });
+    await mailer.send({ to, subject, text: lines.join("\n"), html: paragraphsHtml(lines), replyTo: company.email, log: { kind: "admin_email", clientId, triggeredById: actor.id } });
   } catch (e) {
     console.error("[client email]", e instanceof Error ? e.name : e);
     throw new ConflictError("The email could not be sent. Please try again.");

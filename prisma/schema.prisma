@@ -177,10 +177,39 @@ model Client {
   quotes     Quote[]
   invoices   Invoice[]
   messages   Message[]
+  emailLogs  EmailLog[]
 
   @@index([status])
   @@index([name])
   @@index([createdAt])
+}
+
+enum EmailStatus {
+  SENT // accepted by Mailgun (not yet confirmed delivered)
+  DELIVERED
+  FAILED // rejected when we tried to send
+  BOUNCED // permanent failure reported by the receiving server
+  COMPLAINED // recipient marked it as spam
+}
+
+/// One row per outgoing email. Never stores the body or attachments.
+model EmailLog {
+  id            String      @id @default(cuid())
+  clientId      String?
+  client        Client?     @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  kind          String // invoice, quote, admin_email, message_notice, admin_notice, portal_link, quote_response, other
+  toEmail       String
+  subject       String
+  status        EmailStatus
+  detail        String? // failure / bounce reason, short
+  providerId    String?     @unique // Mailgun message id (without angle brackets)
+  triggeredById String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([createdAt])
+  @@index([clientId, createdAt])
+  @@index([status, createdAt])
 }
 
 /// One running conversation per client. Visible to the client in the portal and to admins on the client page.
