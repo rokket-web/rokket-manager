@@ -3,6 +3,7 @@ import { ForbiddenError, NotFoundError } from "@/server/errors";
 
 export type FormState = {
   ok?: boolean;
+  notice?: string;
   error?: string;
   fieldErrors?: Record<string, string[]>;
   values?: Record<string, string>;

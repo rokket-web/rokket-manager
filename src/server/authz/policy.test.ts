@@ -72,7 +72,7 @@ describe("navFor / homeFor", () => {
       "Users",
     ]);
     expect(navFor("STAFF").map((n) => n.label)).toEqual(["Dashboard", "Clients", "Projects", "Time", "Settings"]);
-    expect(navFor("CLIENT").map((n) => n.label)).toEqual(["Overview", "Projects", "Quotes", "Invoices"]);
+    expect(navFor("CLIENT").map((n) => n.label)).toEqual(["Overview", "Projects", "Quotes", "Invoices", "Messages"]);
   });
   it("routes each role home", () => {
     expect(homeFor("CLIENT")).toBe("/portal");

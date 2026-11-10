@@ -41,6 +41,7 @@ export const NAV: NavItem[] = [
   { label: "Projects", href: "/portal/projects", roles: ["CLIENT"] },
   { label: "Quotes", href: "/portal/quotes", roles: ["CLIENT"] },
   { label: "Invoices", href: "/portal/invoices", roles: ["CLIENT"] },
+  { label: "Messages", href: "/portal/messages", roles: ["CLIENT"] },
 ];
 
 export function navFor(role: Role): NavItem[] {

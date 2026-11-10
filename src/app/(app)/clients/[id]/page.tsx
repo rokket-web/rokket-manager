@@ -20,6 +20,9 @@ import { FieldForm } from "@/components/forms/field-form";
 import { listInvoices } from "@/server/services/invoices";
 import { listQuotes } from "@/server/services/quotes";
 import { getPortalAccess } from "@/server/services/portal-access";
+import { getAdminThread, markThreadReadByAdmin, unreadFromClientCount } from "@/server/services/messages";
+import { getClientEmailRecipient } from "@/server/services/client-email";
+import { Thread } from "@/components/messages/thread";
 import {
   addContactAction,
   addNoteAction,
@@ -29,10 +32,13 @@ import {
   invitePortalUserAction,
   resendPortalInviteAction,
   setPortalActiveAction,
+  sendEmailAction,
+  sendMessageAction,
   setStatusAction,
   updateContactAction,
 } from "../actions";
 import { ContactForm, NoteForm } from "./contact-forms";
+import { EmailForm, MessageForm } from "./message-forms";
 import { DeleteClientButton } from "./delete-client-button";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +50,8 @@ const TABS = [
   ["overview", "Overview"],
   ["contacts", "Contacts"],
   ["notes", "Notes"],
+  ["messages", "Messages"],
+  ["email", "Email"],
   ["timeline", "Timeline"],
   ["files", "Files"],
   ["projects", "Projects"],
@@ -64,9 +72,10 @@ export default async function ClientDetailPage({
   const { id } = await params;
   const sp = await searchParams;
   const canWriteEarly = can(actor.role, "client:write");
-  const visibleTabs = TABS.filter(([k]) => k !== "portal" || canWriteEarly);
+  const visibleTabs = TABS.filter(([k]) => (k !== "portal" && k !== "messages" && k !== "email") || canWriteEarly);
   const tab = visibleTabs.find(([k]) => k === sp.tab)?.[0] ?? "overview";
   const c = await orNotFound(getClient(actor, id));
+  const unread = canWriteEarly ? await unreadFromClientCount(actor, id) : 0;
   const errorKey = sp.error;
   const canWrite = can(actor.role, "client:write");
   const address = [
@@ -133,6 +142,11 @@ export default async function ClientDetailPage({
             className={`px-3 py-2 text-sm whitespace-nowrap ${tab === k ? "border-primary border-b-2 font-medium" : "text-muted-foreground"}`}
           >
             {label}
+            {k === "messages" && unread > 0 && tab !== "messages" && (
+              <span className="bg-primary text-primary-foreground ml-1.5 rounded-full px-1.5 py-0.5 text-xs" aria-label={`${unread} unread`}>
+                {unread}
+              </span>
+            )}
           </Link>
         ))}
       </nav>
@@ -235,6 +249,10 @@ export default async function ClientDetailPage({
           ))}
         </div>
       )}
+
+      {tab === "messages" && canWrite && <MessagesTab actor={actor} clientId={id} />}
+
+      {tab === "email" && canWrite && <EmailTab actor={actor} clientId={id} />}
 
       {tab === "timeline" && (
         <ol className="max-w-2xl space-y-3 text-sm">
@@ -470,6 +488,52 @@ async function ClientFiles({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+async function MessagesTab({ actor, clientId }: { actor: Awaited<ReturnType<typeof requireActor>>; clientId: string }) {
+  const { messages, names, hasPortalAccess } = await getAdminThread(actor, clientId);
+  await markThreadReadByAdmin(actor, clientId);
+  return (
+    <div className="max-w-2xl space-y-4">
+      <p className="text-muted-foreground text-xs">
+        Visible to the client in their portal. They get an email notification (without the message text).
+      </p>
+      {!hasPortalAccess && (
+        <p role="status" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+          This client has no active portal access, so they cannot see messages. Invite them from the Portal access tab, or use Email.
+        </p>
+      )}
+      <Thread
+        mine="admin"
+        messages={messages.map((m) => ({
+          id: m.id,
+          fromClient: m.fromClient,
+          body: m.body,
+          createdAt: m.createdAt,
+          senderName: m.authorId ? (names[m.authorId] ?? "Unknown") : "System",
+        }))}
+      />
+      <MessageForm action={sendMessageAction.bind(null, clientId)} />
+    </div>
+  );
+}
+
+async function EmailTab({ actor, clientId }: { actor: Awaited<ReturnType<typeof requireActor>>; clientId: string }) {
+  const to = await getClientEmailRecipient(actor, clientId);
+  return (
+    <div className="max-w-2xl space-y-3">
+      <p className="text-muted-foreground text-xs">
+        Sends a regular email from the company address. A copy is recorded on the timeline. Replies go to the company email.
+      </p>
+      {to ? (
+        <EmailForm action={sendEmailAction.bind(null, clientId)} to={to} />
+      ) : (
+        <p role="alert" className="text-sm">
+          This client has no email address yet. Add one on the client or a contact first.
+        </p>
       )}
     </div>
   );
