@@ -92,6 +92,11 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
 - Quote accept/decline is a compare-and-set on `status = SENT` (not expired), audited with actor, time and IP, and logged to the client timeline.
 - Portal "Pay" uses `checkoutForInvoice` (shared with the public `/pay/<token>` link) and returns to `/portal/invoices/<id>`.
 - Portal PDFs: `/api/portal/{invoices,quotes}/<id>/pdf` (CLIENT only). Admin PDFs stay under `/api/{invoices,quotes}`.
+- Project sharing is admin-only (`portal-sharing.ts`, "Client portal" tab on a project): the project, each milestone and each task
+  carry `visibleToClient` (default false). Clients see a project only if shared AND theirs; milestones/tasks only if individually
+  shared; a shared task under a hidden milestone is shown without it. Progress counts shared items only. Portal project reads select
+  explicit fields (no budget, rates, billable amounts, time, team, comments, priority, files); tests plant sentinel values to prove it.
+  Comments and files have `visibleToClient` columns but are intentionally not exposed in the portal yet.
 - Seed links `client@rokket.test` to Acme Plumbing. e2e DB setup uses plain SQL (`e2e/helpers/db.ts`, refuses production).
 
 ## Deploy (Render)

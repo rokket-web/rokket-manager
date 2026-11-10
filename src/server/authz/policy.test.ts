@@ -46,7 +46,7 @@ describe("canAccessPath", () => {
     }
   });
   it("keeps the portal client-only, including its documents", () => {
-    for (const p of ["/portal", "/portal/quotes", "/portal/invoices/abc"]) {
+    for (const p of ["/portal", "/portal/projects", "/portal/projects/abc", "/portal/quotes", "/portal/invoices/abc"]) {
       expect(canAccessPath("CLIENT", p)).toBe(true);
       expect(canAccessPath("ADMIN", p)).toBe(false);
       expect(canAccessPath("STAFF", p)).toBe(false);
@@ -72,7 +72,7 @@ describe("navFor / homeFor", () => {
       "Users",
     ]);
     expect(navFor("STAFF").map((n) => n.label)).toEqual(["Dashboard", "Clients", "Projects", "Time", "Settings"]);
-    expect(navFor("CLIENT").map((n) => n.label)).toEqual(["Overview", "Quotes", "Invoices"]);
+    expect(navFor("CLIENT").map((n) => n.label)).toEqual(["Overview", "Projects", "Quotes", "Invoices"]);
   });
   it("routes each role home", () => {
     expect(homeFor("CLIENT")).toBe("/portal");

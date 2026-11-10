@@ -38,6 +38,7 @@ export const NAV: NavItem[] = [
   { label: "Settings", href: "/settings", roles: ["ADMIN", "STAFF"] },
   { label: "Users", href: "/settings/users", roles: ["ADMIN"] },
   { label: "Overview", href: "/portal", roles: ["CLIENT"] },
+  { label: "Projects", href: "/portal/projects", roles: ["CLIENT"] },
   { label: "Quotes", href: "/portal/quotes", roles: ["CLIENT"] },
   { label: "Invoices", href: "/portal/invoices", roles: ["CLIENT"] },
 ];

@@ -22,10 +22,13 @@ export default async function PortalHome({ searchParams }: { searchParams: Promi
           </p>
         )}
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <Card href="/portal/invoices" label="Balance due" value={formatCents(s.outstandingCents)}>
           {s.openInvoices} open invoice{s.openInvoices === 1 ? "" : "s"}
           {s.overdueInvoices > 0 && <span className="text-destructive"> · {s.overdueInvoices} overdue</span>}
+        </Card>
+        <Card href="/portal/projects" label="Projects" value={String(s.sharedProjects)}>
+          {s.sharedProjects === 0 ? "None shared yet" : "In progress"}
         </Card>
         <Card href="/portal/quotes" label="Quotes to review" value={String(s.quotesAwaiting)}>
           {s.quotesAwaiting === 0 ? "Nothing waiting" : "Waiting for your answer"}

@@ -22,6 +22,7 @@ import { milestoneFields, taskFields } from "../project-fields";
 import { PriorityBadge, ProjectStatusBadge, fmtDate } from "../status-badges";
 import { FileUploader } from "./file-uploader";
 import { TaskBoard } from "./task-board";
+import { ClientPortalTab } from "./client-portal-tab";
 import { DeleteButton } from "./delete-button";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ const TABS = [
   ["time", "Time"],
   ["files", "Files"],
   ["team", "Team"],
+  ["portal", "Client portal"],
 ] as const;
 const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
 
@@ -49,7 +51,9 @@ export default async function ProjectPage({
   const actor = await requireActor(["ADMIN", "STAFF"]);
   const { id } = await params;
   const sp = await searchParams;
-  const tab = TABS.find(([k]) => k === sp.tab)?.[0] ?? "overview";
+  const adminTabs = canProject(actor.role, "project:write");
+  const visibleTabs = TABS.filter(([k]) => k !== "portal" || adminTabs);
+  const tab = visibleTabs.find(([k]) => k === sp.tab)?.[0] ?? "overview";
   const dash = await orNotFound(getProjectDashboard(actor, id));
   const p = dash.project;
   const isAdmin = canProject(actor.role, "project:write");
@@ -66,6 +70,11 @@ export default async function ProjectPage({
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">{p.name}</h1>
         <ProjectStatusBadge status={p.status} />
+        {isAdmin && p.visibleToClient && (
+          <Link href={`${base}?tab=portal`} className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 text-xs">
+            Shared with client
+          </Link>
+        )}
         <Link href={`/clients/${p.client.id}`} className="text-muted-foreground text-sm hover:underline">
           {p.client.name}
         </Link>
@@ -86,7 +95,7 @@ export default async function ProjectPage({
       </div>
 
       <nav aria-label="Project sections" className="flex gap-1 overflow-x-auto border-b">
-        {TABS.map(([k, label]) => (
+        {visibleTabs.map(([k, label]) => (
           <Link
             key={k}
             href={`${base}?tab=${k}`}
@@ -235,6 +244,8 @@ export default async function ProjectPage({
           )}
         </div>
       )}
+
+      {tab === "portal" && isAdmin && <ClientPortalTab projectId={id} actor={actor} />}
 
       {tab === "time" && <TimeTab projectId={id} actor={actor} showMoney={showMoney} />}
 

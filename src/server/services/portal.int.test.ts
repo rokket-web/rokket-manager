@@ -134,7 +134,7 @@ describe("portal summary and documents", () => {
     await payments.recordManualPayment(admin, i2.id, { amount: "20" });
     await db.invoice.update({ where: { id: i1.id }, data: { dueDate: new Date("2020-01-01T00:00:00Z") } });
     await sentQuote(clientB);
-    expect(await portal.getPortalSummary(B)).toEqual({ outstandingCents: 13000, openInvoices: 2, overdueInvoices: 1, quotesAwaiting: 1 });
+    expect(await portal.getPortalSummary(B)).toEqual({ outstandingCents: 13000, openInvoices: 2, overdueInvoices: 1, quotesAwaiting: 1, sharedProjects: 0 });
   });
 
   it("renders PDFs for the client's own documents", async () => {

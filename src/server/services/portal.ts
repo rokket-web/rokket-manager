@@ -7,6 +7,7 @@ import { appBaseUrl } from "@/server/app-url";
 import { getMailer } from "@/server/mail";
 import { balanceCents, isOverdue } from "@/lib/billing";
 import { formatCents } from "@/lib/money";
+import { sharedProgress } from "@/lib/progress";
 import { invoicePdfBytes, quotePdfBytes } from "./billing-docs";
 import { checkoutForInvoice } from "./stripe-payments";
 import { readCompanyProfile } from "./settings";
@@ -25,7 +26,7 @@ export function utcToday(): Date {
 export async function getPortalSummary(actor: ActorLike) {
   const clientId = portalClientId(actor);
   const today = utcToday();
-  const [open, quotes] = await withRetry(() =>
+  const [open, quotes, sharedProjects] = await withRetry(() =>
     Promise.all([
       db.invoice.findMany({
         where: { clientId, status: { in: ["SENT", "PARTIALLY_PAID"] } },
@@ -33,6 +34,7 @@ export async function getPortalSummary(actor: ActorLike) {
         take: 500,
       }),
       db.quote.findMany({ where: { clientId, status: "SENT" }, select: { validUntil: true }, take: 500 }),
+      db.project.count({ where: { clientId, visibleToClient: true, status: { in: ["PLANNING", "ACTIVE", "ON_HOLD"] } } }),
     ]),
   );
   return {
@@ -40,6 +42,7 @@ export async function getPortalSummary(actor: ActorLike) {
     openInvoices: open.length,
     overdueInvoices: open.filter((i) => isOverdue(i, today)).length,
     quotesAwaiting: quotes.filter((q) => !q.validUntil || q.validUntil >= today).length,
+    sharedProjects,
   };
 }
 
@@ -218,4 +221,70 @@ async function notifyQuoteResponse(
   } catch {
     /* mail not configured or provider down: the activity timeline still has it */
   }
+}
+
+// ---------- projects (read-only; only what an admin has explicitly shared) ----------
+
+/**
+ * A project is visible only if it is shared AND belongs to this client; its milestones and tasks only if they are
+ * individually shared too. Every field is selected explicitly: budgets, rates, time, team, comments and files can
+ * never appear here, whatever is added to the schema later.
+ */
+export async function listPortalProjects(actor: ActorLike) {
+  const clientId = portalClientId(actor);
+  return withRetry(async () => {
+    const projects = await db.project.findMany({
+      where: { clientId, visibleToClient: true },
+      orderBy: [{ status: "asc" }, { name: "asc" }],
+      take: 100,
+      select: { id: true, name: true, status: true, startDate: true, dueDate: true },
+    });
+    const ids = projects.map((p) => p.id);
+    const [tasks, milestones] = await Promise.all([
+      db.task.groupBy({ by: ["projectId", "status"], where: { projectId: { in: ids }, visibleToClient: true }, _count: { _all: true } }),
+      db.milestone.groupBy({ by: ["projectId", "status"], where: { projectId: { in: ids }, visibleToClient: true }, _count: { _all: true } }),
+    ]);
+    return projects.map((p) => {
+      const t = tasks.filter((x) => x.projectId === p.id);
+      const m = milestones.filter((x) => x.projectId === p.id);
+      const total = t.reduce((n, x) => n + x._count._all, 0) + m.reduce((n, x) => n + x._count._all, 0);
+      const done =
+        t.filter((x) => x.status === "DONE").reduce((n, x) => n + x._count._all, 0) +
+        m.filter((x) => x.status === "COMPLETED").reduce((n, x) => n + x._count._all, 0);
+      return { ...p, progressPercent: sharedProgress(done, total) };
+    });
+  });
+}
+
+export async function getPortalProject(actor: ActorLike, id: string) {
+  const clientId = portalClientId(actor);
+  const p = await withRetry(() =>
+    db.project.findFirst({
+      where: { id, clientId, visibleToClient: true },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        status: true,
+        startDate: true,
+        dueDate: true,
+        milestones: {
+          where: { visibleToClient: true },
+          orderBy: [{ position: "asc" }, { dueDate: "asc" }],
+          select: { id: true, title: true, description: true, status: true, dueDate: true, completedAt: true },
+        },
+        tasks: {
+          where: { visibleToClient: true },
+          orderBy: [{ dueDate: "asc" }, { createdAt: "asc" }],
+          select: { id: true, title: true, description: true, status: true, dueDate: true, milestoneId: true },
+        },
+      },
+    }),
+  );
+  if (!p) throw new NotFoundError("Project not found.");
+  const shownMilestones = new Set(p.milestones.map((m) => m.id));
+  const tasks = p.tasks.map((t) => ({ ...t, milestoneId: t.milestoneId && shownMilestones.has(t.milestoneId) ? t.milestoneId : null }));
+  const total = tasks.length + p.milestones.length;
+  const done = tasks.filter((t) => t.status === "DONE").length + p.milestones.filter((m) => m.status === "COMPLETED").length;
+  return { ...p, tasks, progressPercent: sharedProgress(done, total) };
 }
