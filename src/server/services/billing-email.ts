@@ -3,29 +3,17 @@ import { audit } from "@/server/audit";
 import type { ActorLike } from "@/server/authz/clients";
 import { assertBilling } from "@/server/authz/billing";
 import { ConflictError } from "@/server/errors";
+import { payUrl, stripeConfigured } from "@/server/stripe";
 import { MailNotConfiguredError, escapeHtml, getMailer, type Mailer } from "@/server/mail";
 import { balanceCents } from "@/lib/billing";
 import { fmtDateUtc } from "@/lib/format";
 import { formatCents } from "@/lib/money";
 import { renderInvoicePdf, renderQuotePdf } from "./billing-docs";
-import { logClientActivity } from "./billing-core";
+import { logClientActivity, resolveRecipient } from "./billing-core";
 import { getInvoice, markInvoiceSent } from "./invoices";
 import { getQuote, markQuoteSent } from "./quotes";
 
 export type SendResult = { emailed: boolean; to: string | null; error?: string };
-
-/** billingEmail, else client email, else the primary contact, else any contact with an email. */
-export async function resolveRecipient(clientId: string): Promise<string | null> {
-  const c = await db.client.findUnique({
-    where: { id: clientId },
-    select: {
-      billingEmail: true,
-      email: true,
-      contacts: { where: { email: { not: null } }, orderBy: [{ isPrimary: "desc" }, { firstName: "asc" }], select: { email: true } },
-    },
-  });
-  return c?.billingEmail || c?.email || c?.contacts[0]?.email || null;
-}
 
 function mailerOrThrow(): Mailer {
   try {
@@ -52,9 +40,11 @@ function wrapHtml(lines: string[]): string {
 
 async function deliverInvoice(actor: ActorLike, id: string, mailer: Mailer, to: string): Promise<void> {
   const { bytes, filename, inv, company } = await renderInvoicePdf(actor, id);
+  const link = stripeConfigured() && inv.currency === "USD" && balanceCents(inv) > 0 ? payUrl(inv.publicToken) : null;
   const lines = [
     `Hello ${inv.client.name},`,
     `Please find invoice ${inv.number} attached. Amount due: ${formatCents(balanceCents(inv), inv.currency)}, due ${fmtDateUtc(inv.dueDate)}.`,
+    ...(link ? [`Pay online by card or bank transfer: ${link}`] : []),
     ...(company.paymentInstructions ? [company.paymentInstructions] : []),
     `Thank you,\n${company.name}`,
   ];
@@ -62,7 +52,9 @@ async function deliverInvoice(actor: ActorLike, id: string, mailer: Mailer, to: 
     to,
     subject: `Invoice ${inv.number} from ${company.name}`,
     text: lines.join("\n\n"),
-    html: wrapHtml(lines.flatMap((l) => l.split("\n"))),
+    html:
+      wrapHtml(lines.filter((l) => !l.startsWith("Pay online")).flatMap((l) => l.split("\n"))) +
+      (link ? `<p style="font-family:Arial,sans-serif;font-size:14px"><a href="${escapeHtml(link)}">Pay this invoice online</a></p>` : ""),
     replyTo: company.email,
     attachments: [{ filename, content: bytes, contentType: "application/pdf" }],
   });

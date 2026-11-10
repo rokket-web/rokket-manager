@@ -4,7 +4,9 @@ import { audit } from "@/server/audit";
 import type { ActorLike } from "@/server/authz/clients";
 import { assertBilling } from "@/server/authz/billing";
 import { ConflictError, NotFoundError } from "@/server/errors";
+import { randomBytes } from "node:crypto";
 import { formatCents } from "@/lib/money";
+import { cancelPendingCheckouts } from "./stripe-payments";
 import { formatQuantity, minutesToQuantityMilli } from "@/lib/billing";
 import { billingListSchema, fromTimeSchema, invoiceInputSchema, type LineInput } from "@/lib/validation/billing";
 import { MAX_LINES } from "@/lib/validation/billing";
@@ -176,7 +178,8 @@ export async function markInvoiceSent(actor: ActorLike, id: string) {
     const number = await nextNumber(tx, "INV");
     const sent = await tx.invoice.update({
       where: { id },
-      data: { status: "SENT", number, issueDate, dueDate, sentAt: new Date() },
+      // Fresh random token: the default cuid is not meant to be unguessable, and this one gates the public pay link.
+      data: { status: "SENT", number, issueDate, dueDate, sentAt: new Date(), publicToken: randomBytes(24).toString("base64url") },
     });
     await logClientActivity(tx, inv.clientId, actor.id, "invoice.sent", `Invoice ${number} sent (${formatCents(inv.totalCents, inv.currency)})`);
     await audit({ actorId: actor.id, action: "invoice.send", entity: "Invoice", entityId: id, meta: { number } }, tx);
@@ -187,6 +190,8 @@ export async function markInvoiceSent(actor: ActorLike, id: string) {
 /** Void a sent invoice with no payments. Frees its time entries for re-billing. */
 export async function voidInvoice(actor: ActorLike, id: string) {
   assertBilling(actor, "billing:write");
+  // Close any open Stripe payment link first (outside the DB transaction: it is a network call).
+  await cancelPendingCheckouts(id);
   return db.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT 1 FROM "Invoice" WHERE "id" = ${id} FOR UPDATE`;
     const inv = await tx.invoice.findUnique({ where: { id } });

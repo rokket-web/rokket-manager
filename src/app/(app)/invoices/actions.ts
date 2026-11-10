@@ -12,6 +12,8 @@ import {
   voidInvoice,
 } from "@/server/services/invoices";
 import { recordManualPayment } from "@/server/services/payments";
+import { refundPayment } from "@/server/services/stripe-payments";
+import { dollarsToCents } from "@/lib/money";
 import { resendInvoice, sendInvoice, type SendResult } from "@/server/services/billing-email";
 import { toFormState, type FormState } from "../clients/form-state";
 import { docValues, formToDoc } from "../billing-form";
@@ -125,5 +127,23 @@ export async function recordPaymentAction(id: string, _p: FormState, fd: FormDat
   }
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
+  return { ok: true };
+}
+
+export async function refundPaymentAction(invoiceId: string, paymentId: string, _p: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor(["ADMIN"]);
+  const values = { amount: String(fd.get("amount") ?? "") };
+  const cents = dollarsToCents(values.amount);
+  if (cents === null || cents <= 0) {
+    return { error: "Enter an amount like 25 or 25.50.", values };
+  }
+  try {
+    await refundPayment(actor, paymentId, cents);
+  } catch (e) {
+    if (e instanceof ConflictError) return { error: e.message, values };
+    return toFormState(e, values);
+  }
+  revalidatePath("/invoices");
+  revalidatePath(`/invoices/${invoiceId}`);
   return { ok: true };
 }

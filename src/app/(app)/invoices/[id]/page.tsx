@@ -6,10 +6,12 @@ import { FieldForm } from "@/components/forms/field-form";
 import { buttonVariants } from "@/components/ui/button";
 import { balanceCents, isOverdue } from "@/lib/billing";
 import { centsToDollarsInput, formatCents } from "@/lib/money";
+import { RefundForm } from "@/components/billing/refund-form";
+import { payUrl, stripeConfigured } from "@/server/stripe";
 import { requireActor } from "@/server/authz/session";
 import { getInvoice } from "@/server/services/invoices";
 import { fmtDate } from "../../projects/status-badges";
-import { deleteInvoiceAction, recordPaymentAction, resendInvoiceAction, sendInvoiceAction, voidInvoiceAction } from "../actions";
+import { deleteInvoiceAction, recordPaymentAction, refundPaymentAction, resendInvoiceAction, sendInvoiceAction, voidInvoiceAction } from "../actions";
 
 export const metadata = { title: "Invoice" };
 export const dynamic = "force-dynamic";
@@ -30,7 +32,8 @@ export default async function InvoicePage({
   const overdue = isOverdue(inv, today);
   const balance = balanceCents(inv);
   const canPay = inv.status === "SENT" || inv.status === "PARTIALLY_PAID";
-  const hasPayments = inv.payments.some((p) => p.status === "SUCCEEDED" || p.status === "PENDING");
+  const hasPayments = inv.payments.some((p) => p.status === "SUCCEEDED");
+  const link = canPay && stripeConfigured() && inv.currency === "USD" ? payUrl(inv.publicToken) : null;
   return (
     <div className="space-y-6">
       <div className="space-y-1">
@@ -162,6 +165,7 @@ export default async function InvoicePage({
                   <th className="p-2">Reference</th>
                   <th className="p-2">Status</th>
                   <th className="p-2 text-right">Amount</th>
+                  <th className="p-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -169,13 +173,33 @@ export default async function InvoicePage({
                   <tr key={p.id} className="border-t">
                     <td className="p-2">{fmtDate(p.paidAt ?? p.createdAt)}</td>
                     <td className="p-2">{p.method === "STRIPE" ? "Card / Stripe" : "Manual"}</td>
-                    <td className="p-2">{p.reference ?? "-"}</td>
+                    <td className="p-2">{p.reference?.startsWith("refund:") ? "Refund" : (p.reference ?? "-")}</td>
                     <td className="p-2">{p.status.charAt(0) + p.status.slice(1).toLowerCase()}</td>
                     <td className="p-2 text-right tabular-nums">{formatCents(p.amountCents, p.currency)}</td>
+                    <td className="p-2">
+                      {p.method === "STRIPE" && p.status === "SUCCEEDED" && p.amountCents > 0 && p.stripePaymentIntentId && (
+                        <RefundForm
+                          action={refundPaymentAction.bind(null, id, p.id)}
+                          defaultAmount={centsToDollarsInput(p.amountCents)}
+                        />
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {link && (
+          <div className="space-y-1">
+            <h3 className="text-sm font-medium">Online payment link</h3>
+            <input
+              readOnly
+              aria-label="Online payment link"
+              value={link}
+              className="border-input bg-muted/30 w-full max-w-2xl rounded-md border px-3 py-1.5 font-mono text-xs"
+            />
+            <p className="text-muted-foreground text-xs">Included in the invoice email. Opens Stripe Checkout for the balance due.</p>
           </div>
         )}
         {canPay && (

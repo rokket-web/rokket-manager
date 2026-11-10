@@ -1,6 +1,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { computeTotals, formatNumber } from "@/lib/billing";
 import { MAX_DOCUMENT_CENTS, type LineInput } from "@/lib/validation/billing";
+import { db } from "@/server/db";
 import { NotFoundError } from "@/server/errors";
 import { z } from "zod";
 
@@ -70,4 +71,17 @@ export async function logClientActivity(
   summary: string,
 ) {
   await tx.activity.create({ data: { clientId, actorId, type, summary } });
+}
+
+/** billingEmail, else client email, else the primary contact, else any contact with an email. */
+export async function resolveRecipient(clientId: string): Promise<string | null> {
+  const c = await db.client.findUnique({
+    where: { id: clientId },
+    select: {
+      billingEmail: true,
+      email: true,
+      contacts: { where: { email: { not: null } }, orderBy: [{ isPrimary: "desc" }, { firstName: "asc" }], select: { email: true } },
+    },
+  });
+  return c?.billingEmail || c?.email || c?.contacts[0]?.email || null;
 }
