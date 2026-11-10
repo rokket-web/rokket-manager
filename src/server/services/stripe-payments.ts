@@ -14,11 +14,22 @@ const REUSE_WINDOW_MS = 20 * 60 * 60 * 1000; // Checkout sessions live 24h; reus
 
 // ---------- paying (public, token-authorised) ----------
 
-/** Create or reuse a Stripe-hosted Checkout session for the invoice's current balance. */
-export async function startCheckout(token: string): Promise<{ url: string }> {
-  if (!/^[\w-]{16,128}$/.test(token)) throw new NotFoundError();
-  const inv = await db.invoice.findUnique({ where: { publicToken: token }, include: { client: { select: { id: true, name: true } } } });
-  if (!inv) throw new NotFoundError();
+type PayableInvoice = {
+  id: string;
+  number: string | null;
+  currency: string;
+  status: string;
+  totalCents: number;
+  paidCents: number;
+  clientId: string;
+  client: { name: string };
+};
+
+/**
+ * Create or reuse a Stripe-hosted Checkout session for the invoice's current balance. The CALLER must already have
+ * authorised access to this invoice (public token or owning portal client).
+ */
+export async function checkoutForInvoice(inv: PayableInvoice, urls: { success: string; cancel: string }): Promise<{ url: string }> {
   const balance = balanceCents(inv);
   if ((inv.status !== "SENT" && inv.status !== "PARTIALLY_PAID") || balance <= 0 || !inv.number) {
     throw new ConflictError("This invoice cannot be paid online.");
@@ -42,7 +53,6 @@ export async function startCheckout(token: string): Promise<{ url: string }> {
     if (existing.status === "open" && existing.url) return { url: existing.url };
   }
 
-  const base = appBaseUrl();
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     client_reference_id: inv.id,
@@ -59,14 +69,26 @@ export async function startCheckout(token: string): Promise<{ url: string }> {
     ],
     metadata: { invoiceId: inv.id },
     payment_intent_data: { metadata: { invoiceId: inv.id }, description: `Invoice ${inv.number}` },
-    success_url: `${base}/pay/${token}/done?result=success`,
-    cancel_url: `${base}/pay/${token}/done?result=cancelled`,
+    success_url: urls.success,
+    cancel_url: urls.cancel,
   });
   if (!session.url) throw new Error("Stripe returned no checkout URL");
   await db.payment.create({
     data: { invoiceId: inv.id, method: "STRIPE", status: "PENDING", amountCents: balance, currency: inv.currency, stripeSessionId: session.id },
   });
   return { url: session.url };
+}
+
+/** Public pay link: the unguessable token authorises paying THIS invoice. */
+export async function startCheckout(token: string): Promise<{ url: string }> {
+  if (!/^[\w-]{16,128}$/.test(token)) throw new NotFoundError();
+  const inv = await db.invoice.findUnique({ where: { publicToken: token }, include: { client: { select: { name: true } } } });
+  if (!inv) throw new NotFoundError();
+  const base = appBaseUrl();
+  return checkoutForInvoice(inv, {
+    success: `${base}/pay/${token}/done?result=success`,
+    cancel: `${base}/pay/${token}/done?result=cancelled`,
+  });
 }
 
 /** Status shown on the public return page. Reveals only the number, amount and state. */

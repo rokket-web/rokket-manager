@@ -17,6 +17,8 @@ import {
   updateContact,
   type ImportResult,
 } from "@/server/services/clients";
+import { headers } from "next/headers";
+import { inviteClientUser, resendPortalInvite, setPortalActive } from "@/server/services/portal-access";
 import { formToObject, toFormState, type FormState } from "./form-state";
 
 export async function createClientAction(_prev: FormState, fd: FormData): Promise<FormState> {
@@ -129,4 +131,46 @@ export async function importCsvAction(_prev: ImportState, fd: FormData): Promise
   } catch (e) {
     return { error: toFormState(e).error };
   }
+}
+
+// ----- portal access (admin) -----
+export async function invitePortalUserAction(clientId: string, _p: FormState, fd: FormData): Promise<FormState> {
+  const actor = await requireActor(["ADMIN"]);
+  const values = formToObject(fd);
+  try {
+    const r = await inviteClientUser(actor, clientId, values, await headers());
+    revalidatePath(`/clients/${clientId}`);
+    if (!r.sent) return { error: r.error };
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof ConflictError) return { error: e.message, values };
+    return toFormState(e, values);
+  }
+}
+
+const portalBack = (clientId: string, error?: string, notice?: string) => {
+  const p = new URLSearchParams({ tab: "portal" });
+  if (error) p.set("error", error);
+  if (notice) p.set("notice", notice);
+  redirect(`/clients/${clientId}?${p}`);
+};
+
+export async function resendPortalInviteAction(clientId: string) {
+  const actor = await requireActor(["ADMIN"]);
+  try {
+    const r = await resendPortalInvite(actor, clientId, await headers());
+    revalidatePath(`/clients/${clientId}`);
+    if (!r.sent) portalBack(clientId, r.error);
+    portalBack(clientId, undefined, "Invite email sent.");
+  } catch (e) {
+    if (e instanceof ConflictError) portalBack(clientId, e.message);
+    throw e;
+  }
+}
+
+export async function setPortalActiveAction(clientId: string, active: boolean) {
+  const actor = await requireActor(["ADMIN"]);
+  await setPortalActive(actor, clientId, active);
+  revalidatePath(`/clients/${clientId}`);
+  portalBack(clientId, undefined, active ? "Portal access restored." : "Portal access turned off and sessions ended.");
 }

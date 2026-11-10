@@ -266,6 +266,8 @@ export async function deleteClient(actor: ActorLike, id: string) {
       { actorId: actor.id, action: "client.delete", entity: "Client", entityId: id, meta: { name: c.name } },
       tx,
     );
+    // The client's portal login goes with it (sessions cascade); never leave an orphaned CLIENT user behind.
+    await tx.user.deleteMany({ where: { clientId: id, role: "CLIENT" } });
     await tx.client.delete({ where: { id } });
     return files.map((f) => f.storageKey);
   });

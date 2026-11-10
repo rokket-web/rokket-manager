@@ -81,6 +81,24 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
   (audit meta `overpaidCents`); refund it from the invoice page.
 - Client accept/decline links and the portal invoice views are Phase 5; for now the admin records quote responses.
 
+## Portal (Phase 5)
+
+- Clients are CLIENT users with `User.clientId` (one per client). Admin invites from the client's "Portal access" tab
+  (`src/server/services/portal-access.ts`); login is a Mailgun magic link (single use, 1h, `src/server/portal-mail.ts`).
+  Only active CLIENT users are ever emailed a link; staff/admin stay on passwords. Turning access off deletes their sessions.
+- Every portal read/write goes through `src/server/services/portal.ts` and is scoped by `portalClientId(actor)` (the signed-in
+  user's own clientId, fail-closed). `clientId` is part of each WHERE, so another client's id is a plain 404. Drafts, voided
+  invoices and draft quotes are never visible. Portal views select explicit fields (no publicToken, Stripe ids or internal references).
+- Quote accept/decline is a compare-and-set on `status = SENT` (not expired), audited with actor, time and IP, and logged to the client timeline.
+- Portal "Pay" uses `checkoutForInvoice` (shared with the public `/pay/<token>` link) and returns to `/portal/invoices/<id>`.
+- Portal PDFs: `/api/portal/{invoices,quotes}/<id>/pdf` (CLIENT only). Admin PDFs stay under `/api/{invoices,quotes}`.
+- Project sharing is admin-only (`portal-sharing.ts`, "Client portal" tab on a project): the project, each milestone and each task
+  carry `visibleToClient` (default false). Clients see a project only if shared AND theirs; milestones/tasks only if individually
+  shared; a shared task under a hidden milestone is shown without it. Progress counts shared items only. Portal project reads select
+  explicit fields (no budget, rates, billable amounts, time, team, comments, priority, files); tests plant sentinel values to prove it.
+  Comments and files have `visibleToClient` columns but are intentionally not exposed in the portal yet.
+- Seed links `client@rokket.test` to Acme Plumbing. e2e DB setup uses plain SQL (`e2e/helpers/db.ts`, refuses production).
+
 ## Deploy (Render)
 
 Build: `npm ci && npm run db:deploy && npm run build` (db:deploy = migrate with cold-start retries). Start: `npm start`.

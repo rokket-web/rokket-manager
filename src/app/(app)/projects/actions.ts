@@ -17,6 +17,7 @@ import {
   updateTask,
 } from "@/server/services/tasks";
 import { addManualEntry, deleteTimeEntry, startTimer, stopTimer } from "@/server/services/time";
+import { setItemsVisibility, setProjectVisibility } from "@/server/services/portal-sharing";
 import { confirmUpload, deleteFile, requestUpload } from "@/server/services/files";
 import { StorageNotConfiguredError } from "@/server/storage";
 import { formToObject, toFormState, type FormState } from "../clients/form-state";
@@ -230,4 +231,17 @@ export async function deleteFileAction(fileId: string, revalidate: string) {
   const actor = await requireActor([...INTERNAL]);
   await deleteFile(actor, fileId);
   revalidatePath(revalidate);
+}
+
+// ----- client portal sharing (admin) -----
+export async function setProjectVisibilityAction(projectId: string, visible: boolean) {
+  const actor = await requireActor(["ADMIN"]);
+  await setProjectVisibility(actor, projectId, visible);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function setItemsVisibilityAction(projectId: string, kind: "milestone" | "task", ids: string[] | null, visible: boolean) {
+  const actor = await requireActor(["ADMIN"]);
+  await setItemsVisibility(actor, projectId, kind, ids, visible);
+  revalidatePath(`/projects/${projectId}`);
 }

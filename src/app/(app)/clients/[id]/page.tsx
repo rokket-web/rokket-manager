@@ -14,12 +14,21 @@ import { deleteFileAction } from "../../projects/actions";
 import { DeleteButton } from "../../projects/[id]/delete-button";
 import { formatTax } from "@/lib/tax";
 import { StatusBadge } from "../status-badge";
+import { BillingStatusBadge } from "@/components/billing/badges";
+import { ConfirmButton } from "@/components/billing/confirm-button";
+import { FieldForm } from "@/components/forms/field-form";
+import { listInvoices } from "@/server/services/invoices";
+import { listQuotes } from "@/server/services/quotes";
+import { getPortalAccess } from "@/server/services/portal-access";
 import {
   addContactAction,
   addNoteAction,
   deleteClientAction,
   deleteContactAction,
   deleteNoteAction,
+  invitePortalUserAction,
+  resendPortalInviteAction,
+  setPortalActiveAction,
   setStatusAction,
   updateContactAction,
 } from "../actions";
@@ -39,6 +48,7 @@ const TABS = [
   ["files", "Files"],
   ["projects", "Projects"],
   ["invoices", "Invoices"],
+  ["portal", "Portal access"],
 ] as const;
 
 const fmt = (d: Date) => d.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
@@ -48,12 +58,14 @@ export default async function ClientDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; error?: string }>;
+  searchParams: Promise<{ tab?: string; error?: string; notice?: string }>;
 }) {
   const actor = await requireActor(["ADMIN", "STAFF"]);
   const { id } = await params;
   const sp = await searchParams;
-  const tab = TABS.find(([k]) => k === sp.tab)?.[0] ?? "overview";
+  const canWriteEarly = can(actor.role, "client:write");
+  const visibleTabs = TABS.filter(([k]) => k !== "portal" || canWriteEarly);
+  const tab = visibleTabs.find(([k]) => k === sp.tab)?.[0] ?? "overview";
   const c = await orNotFound(getClient(actor, id));
   const errorKey = sp.error;
   const canWrite = can(actor.role, "client:write");
@@ -113,7 +125,7 @@ export default async function ClientDetailPage({
         </p>
       )}
       <nav aria-label="Client sections" className="flex gap-1 overflow-x-auto border-b">
-        {TABS.map(([k, label]) => (
+        {visibleTabs.map(([k, label]) => (
           <Link
             key={k}
             href={`/clients/${id}?tab=${k}`}
@@ -240,8 +252,148 @@ export default async function ClientDetailPage({
 
       {tab === "projects" && <ClientProjects actor={actor} clientId={id} />}
       {tab === "files" && <ClientFiles actor={actor} clientId={id} canWrite={canWrite} />}
-      {tab === "invoices" && (
-        <p className="text-muted-foreground rounded-md border p-6 text-sm">Invoices arrive in Phase 4.</p>
+      {tab === "invoices" && <ClientBilling actor={actor} clientId={id} />}
+      {tab === "portal" && canWrite && (
+        <PortalTab
+          clientId={id}
+          notice={sp.notice}
+          error={sp.error}
+          defaults={{
+            name: c.contacts.find((x) => x.isPrimary)?.firstName
+              ? `${c.contacts.find((x) => x.isPrimary)!.firstName} ${c.contacts.find((x) => x.isPrimary)!.lastName}`.trim()
+              : "",
+            email: c.billingEmail ?? c.email ?? c.contacts.find((x) => x.isPrimary)?.email ?? "",
+          }}
+          actor={actor}
+        />
+      )}
+    </div>
+  );
+}
+
+async function ClientBilling({ actor, clientId }: { actor: Awaited<ReturnType<typeof requireActor>>; clientId: string }) {
+  if (actor.role !== "ADMIN") {
+    return <p className="text-muted-foreground rounded-md border p-6 text-sm">Billing is visible to admins only.</p>;
+  }
+  const [inv, quo] = await Promise.all([
+    listInvoices(actor, { clientId, pageSize: 50 }),
+    listQuotes(actor, { clientId, pageSize: 50 }),
+  ]);
+  const row = (href: string, label: string, status: string, total: number, currency: string) => (
+    <tr key={href} className="border-t">
+      <td className="p-2">
+        <Link href={href} className="font-medium hover:underline">
+          {label}
+        </Link>
+      </td>
+      <td className="p-2">
+        <BillingStatusBadge status={status} />
+      </td>
+      <td className="p-2 text-right tabular-nums">{formatCents(total, currency)}</td>
+    </tr>
+  );
+  return (
+    <div className="space-y-6">
+      {[
+        ["Invoices", inv.items.map((i) => row(`/invoices/${i.id}`, i.number ?? "Draft invoice", i.status, i.totalCents, i.currency))],
+        ["Quotes", quo.items.map((q) => row(`/quotes/${q.id}`, q.number ?? "Draft quote", q.status, q.totalCents, q.currency))],
+      ].map(([title, rows]) => (
+        <section key={title as string} className="space-y-2">
+          <h2 className="font-medium">{title as string}</h2>
+          {(rows as unknown[]).length === 0 ? (
+            <p className="text-muted-foreground text-sm">None yet.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-left text-sm">
+                <tbody>{rows as React.ReactNode}</tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ))}
+      <Link href={`/invoices/new?clientId=${clientId}`} className="text-sm underline">
+        New invoice for this client
+      </Link>
+    </div>
+  );
+}
+
+async function PortalTab({
+  clientId,
+  notice,
+  error,
+  defaults,
+  actor,
+}: {
+  clientId: string;
+  notice?: string;
+  error?: string;
+  defaults: { name: string; email: string };
+  actor: Awaited<ReturnType<typeof requireActor>>;
+}) {
+  const access = await getPortalAccess(actor, clientId);
+  return (
+    <div className="max-w-2xl space-y-4">
+      <p className="text-muted-foreground text-sm">
+        A portal user lets this client sign in with an emailed link to see their quotes, invoices and shared project
+        updates. Each client has one portal user.
+      </p>
+      {notice && (
+        <p role="status" className="text-sm">
+          {notice}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-destructive text-sm">
+          {error}
+        </p>
+      )}
+      {!access ? (
+        <FieldForm
+          fields={[
+            { name: "name", label: "Name", required: true },
+            { name: "email", label: "Email", type: "email", required: true, hint: "The invite link is sent here." },
+          ]}
+          action={invitePortalUserAction.bind(null, clientId)}
+          defaults={defaults}
+          submitLabel="Send invite"
+        />
+      ) : (
+        <div className="space-y-3 rounded-md border p-4 text-sm">
+          <p>
+            <span className="font-medium">{access.name}</span> · {access.email}
+          </p>
+          <p className="text-muted-foreground">
+            {access.active ? "Access is on." : "Access is turned off."} {access._count.sessions} active session
+            {access._count.sessions === 1 ? "" : "s"}.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {access.active ? (
+              <>
+                <ConfirmButton
+                  action={resendPortalInviteAction.bind(null, clientId)}
+                  label="Resend invite"
+                  prompt={`Email a new sign-in link to ${access.email}?`}
+                  confirmLabel="Yes, send"
+                />
+                <ConfirmButton
+                  action={setPortalActiveAction.bind(null, clientId, false)}
+                  label="Turn off access"
+                  prompt="Sign them out and block portal access?"
+                  confirmLabel="Yes, turn off"
+                  destructive
+                />
+              </>
+            ) : (
+              <ConfirmButton
+                action={setPortalActiveAction.bind(null, clientId, true)}
+                label="Restore access"
+                prompt="Allow this person to sign in again?"
+                confirmLabel="Yes, restore"
+              />
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

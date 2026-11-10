@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { appBaseUrl } from "@/server/app-url";
 
 export class StripeNotConfiguredError extends Error {
   constructor() {
@@ -54,10 +55,7 @@ export function verifyStripeWebhook(rawBody: string, signature: string | null): 
   }
 }
 
-/** Absolute base URL of this app, no trailing slash. */
-export function appBaseUrl(): string {
-  return (process.env.BETTER_AUTH_URL ?? "").replace(/\/+$/, "");
-}
+export { appBaseUrl };
 
 export function payUrl(publicToken: string): string {
   return `${appBaseUrl()}/pay/${publicToken}`;

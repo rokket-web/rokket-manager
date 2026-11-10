@@ -4,6 +4,7 @@ import { nextCookies } from "better-auth/next-js";
 import { magicLink } from "better-auth/plugins";
 import { db } from "@/server/db";
 import { audit } from "@/server/audit";
+import { sendPortalLink } from "@/server/portal-mail";
 
 // Better Auth rate-limits sign-in in production. E2E runs log in many times in parallel, so allow turning it
 // off, but ONLY when the app URL is localhost. Real deployments can never disable it by accident.
@@ -43,10 +44,10 @@ export const auth = betterAuth({
   },
   plugins: [
     magicLink({
-      disableSignUp: true, // clients are invited (Phase 5), not self-registered
+      disableSignUp: true, // clients are invited by an admin, never self-registered
+      expiresIn: 60 * 60, // 1 hour, single use
       sendMagicLink: async ({ email, url }) => {
-        // Mailgun delivery lands in Phase 4/5. Until then, log in dev only.
-        if (process.env.NODE_ENV !== "production") console.info(`[magic-link] ${email}: ${url}`);
+        await sendPortalLink(email, url);
       },
     }),
     nextCookies(), // keep last
