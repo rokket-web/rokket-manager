@@ -29,6 +29,18 @@ test("PDFs: anonymous is turned away, staff is forbidden", async ({ page, reques
   expect((await page.request.get("/api/quotes/anything/pdf", { maxRedirects: 0 })).status()).toBe(403);
 });
 
+test("public pay route and webhook are reachable without login, and reject bad input", async ({ request }) => {
+  const pay = await request.get("/pay/not-a-real-token-1234567890", { maxRedirects: 0 });
+  expect(pay.status()).toBe(404); // not a redirect to /login
+  const hook = await request.post("/api/webhooks/stripe", { data: "{}", headers: { "content-type": "application/json" } });
+  expect([400, 503]).toContain(hook.status()); // unsigned: bad signature, or secret not configured
+  const bad = await request.post("/api/webhooks/stripe", {
+    data: "{}",
+    headers: { "content-type": "application/json", "stripe-signature": "t=1,v1=deadbeef" },
+  });
+  expect([400, 503]).toContain(bad.status());
+});
+
 test("admin: saves billing settings", async ({ page }) => {
   await login(page, "admin@rokket.test");
   await page.goto("/settings");
@@ -79,6 +91,15 @@ test("admin: quote -> accepted -> invoice -> sent -> paid", async ({ page }) => 
   await page.getByRole("button", { name: "Resend email" }).click();
   await page.getByRole("button", { name: "Yes, resend" }).click();
   await expect(page.getByText(/Emailed to /)).toBeVisible();
+
+  // the emailed pay link creates a real (test-mode) Stripe Checkout session and redirects to Stripe
+  const link = page.getByLabel("Online payment link");
+  if (process.env.STRIPE_SECRET_KEY) await expect(link).toBeVisible();
+  if (await link.count()) {
+    const res = await page.request.get(await link.inputValue(), { maxRedirects: 0 });
+    expect(res.status()).toBe(303);
+    expect(res.headers()["location"]).toMatch(/^https:\/\/checkout\.stripe\.com\//);
+  }
 
   // partial then full payment; overpayment is refused
   await page.getByLabel("Amount (USD)").fill("10");

@@ -59,6 +59,28 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
   never `z.coerce.boolean()` (it treats "false" as true).
 - Deleting a client with projects is blocked (`Project.client` is onDelete Restrict).
 
+## Billing module (Phase 4)
+
+- Admin-only (`src/server/authz/billing.ts`); staff/clients never see quotes, invoices, payments. Services:
+  `src/server/services/{quotes,invoices,payments,stripe-payments,billing-email,billing-docs,billing-core,settings}.ts`.
+  Pure math in `src/lib/billing.ts` (integer cents, quantities in thousandths, bps tax, half-up rounding, tax once per document).
+- Totals are always recomputed server-side; the editor's preview is cosmetic. Tax rate is snapshotted on save
+  (client rate, else `defaultTaxRateBps` setting). Quote -> invoice copies the accepted quote's snapshot.
+- Numbers (`INV-0001`, `Q-0001`) are assigned when SENT via the `Sequence` table (gapless, row-locked), so drafts are deletable.
+- Invoice payment state changes in ONE place: `recomputeInvoicePayments` (locks the invoice row; `paidCents` = sum of SUCCEEDED
+  payment rows). Manual payments and Stripe both go through it. Refunds are negative SUCCEEDED rows (`reference: refund:<chargeId>`),
+  applied as a delta from the charge's cumulative `amount_refunded`, so webhook retries and the admin refund action never double count.
+- Time -> invoice: `InvoiceLine.timeEntryId` is unique, so time is billed once; voiding frees it.
+- Email: `src/server/mail` (Mailgun over fetch). Sending validates recipient + mail config BEFORE locking the document.
+  `MAIL_DRIVER=log` (non-production only) logs instead of sending; used by e2e. PDFs: `src/server/pdf/render.ts` (pdf-lib).
+- Stripe: hosted Checkout. Public link `/pay/<token>` (random token regenerated on send) creates/reuses a session for the balance.
+  Webhook `/api/webhooks/stripe` verifies the signature on the raw body, records `StripeEvent` ids in the same transaction as the
+  effects (failure rolls back -> Stripe retries; repeats are no-ops). A live key is refused outside production. See `docs/stripe-setup.md`.
+- Voiding an invoice first expires open Checkout sessions; it is refused if one was already paid.
+- Known limitation: if a client pays by card after a manual payment covered the balance, the invoice shows overpaid
+  (audit meta `overpaidCents`); refund it from the invoice page.
+- Client accept/decline links and the portal invoice views are Phase 5; for now the admin records quote responses.
+
 ## Deploy (Render)
 
 Build: `npm ci && npm run db:deploy && npm run build` (db:deploy = migrate with cold-start retries). Start: `npm start`.
