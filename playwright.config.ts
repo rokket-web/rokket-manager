@@ -11,7 +11,7 @@ export default defineConfig({
   webServer: {
     command: process.env.CI ? `npx next start -p ${port}` : `npx next dev -p ${port}`,
     url: `http://localhost:${port}/api/health`,
-    env: { RATE_LIMIT_OFF: "1" },
+    env: { RATE_LIMIT_OFF: "1", MAIL_DRIVER: "log" },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

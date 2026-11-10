@@ -6,6 +6,8 @@ import type { ActorLike } from "@/server/authz/clients";
 import * as invoices from "./invoices";
 import * as quotes from "./quotes";
 import * as payments from "./payments";
+import * as billingEmail from "./billing-email";
+import { setMailerForTests, type MailMessage } from "@/server/mail";
 
 const P = `ZZTEST-${Math.random().toString(36).slice(2, 8)}`;
 let admin: ActorLike;
@@ -154,5 +156,81 @@ describe("quotes", () => {
     const inv = await invoices.createInvoiceFromQuote(admin, q.id);
     expect(inv.totalCents).toBe(sent.totalCents);
     await expect(invoices.createInvoiceFromQuote(admin, q.id)).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+describe("sending and email", () => {
+  const sent: MailMessage[] = [];
+  const ok = { send: async (m: MailMessage) => void sent.push(m) };
+  const failing = { send: async () => { throw new Error("boom"); } };
+  let noEmailClientId: string;
+
+  beforeAll(async () => {
+    noEmailClientId = (await db.client.create({ data: { name: `${P} NoEmail` } })).id;
+    await db.client.update({ where: { id: clientId }, data: { billingEmail: "billing@acme.test" } });
+  });
+  afterAll(async () => {
+    setMailerForTests(undefined);
+    await db.invoice.deleteMany({ where: { clientId: noEmailClientId } });
+    await db.activity.deleteMany({ where: { clientId: noEmailClientId } });
+    await db.client.deleteMany({ where: { id: noEmailClientId } });
+  });
+
+  it("refuses to send, and leaves the invoice a draft, when the client has no email", async () => {
+    setMailerForTests(ok);
+    const inv = await invoices.createInvoice(admin, { clientId: noEmailClientId, lines: [line("x")] });
+    await expect(billingEmail.sendInvoice(admin, inv.id)).rejects.toBeInstanceOf(ConflictError);
+    expect((await db.invoice.findUniqueOrThrow({ where: { id: inv.id } })).status).toBe("DRAFT");
+  });
+
+  it("refuses to send, and leaves the invoice a draft, when mail is not configured", async () => {
+    setMailerForTests(undefined);
+    const prev = { ...process.env };
+    delete process.env.MAILGUN_API_KEY;
+    delete process.env.MAIL_DRIVER;
+    const inv = await invoices.createInvoice(admin, { clientId, lines: [line("x")] });
+    await expect(billingEmail.sendInvoice(admin, inv.id)).rejects.toBeInstanceOf(ConflictError);
+    expect((await db.invoice.findUniqueOrThrow({ where: { id: inv.id } })).status).toBe("DRAFT");
+    Object.assign(process.env, prev);
+  });
+
+  it("sends the invoice with a PDF attachment to the billing email", async () => {
+    setMailerForTests(ok);
+    const inv = await invoices.createInvoice(admin, { clientId, lines: [line("Work", "2", "100")] });
+    const r = await billingEmail.sendInvoice(admin, inv.id);
+    expect(r).toMatchObject({ emailed: true, to: "billing@acme.test" });
+    const m = sent.at(-1)!;
+    expect(m.to).toBe("billing@acme.test");
+    expect(m.subject).toMatch(/^Invoice INV-\d{4}/);
+    expect(m.attachments![0].contentType).toBe("application/pdf");
+    expect(Buffer.from(m.attachments![0].content.slice(0, 5)).toString()).toBe("%PDF-");
+    expect((await db.invoice.findUniqueOrThrow({ where: { id: inv.id } })).status).toBe("SENT");
+    // already sent -> conflict; resend works
+    await expect(billingEmail.sendInvoice(admin, inv.id)).rejects.toBeInstanceOf(ConflictError);
+    expect((await billingEmail.resendInvoice(admin, inv.id)).emailed).toBe(true);
+  });
+
+  it("keeps the invoice sent and reports failure when delivery fails, then resend recovers", async () => {
+    setMailerForTests(failing);
+    const inv = await invoices.createInvoice(admin, { clientId, lines: [line("Work")] });
+    const r = await billingEmail.sendInvoice(admin, inv.id);
+    expect(r.emailed).toBe(false);
+    expect(r.error).toMatch(/Resend/);
+    expect((await db.invoice.findUniqueOrThrow({ where: { id: inv.id } })).status).toBe("SENT");
+    setMailerForTests(ok);
+    expect((await billingEmail.resendInvoice(admin, inv.id)).emailed).toBe(true);
+  });
+
+  it("sends quotes and only resends sent quotes", async () => {
+    setMailerForTests(ok);
+    const q = await quotes.createQuote(admin, { clientId, lines: [line("Scope")] });
+    await expect(billingEmail.resendQuote(admin, q.id)).rejects.toBeInstanceOf(ConflictError);
+    expect((await billingEmail.sendQuote(admin, q.id)).emailed).toBe(true);
+    expect(sent.at(-1)!.subject).toMatch(/^Quote Q-\d{4}/);
+  });
+
+  it("staff cannot send or resend", async () => {
+    await expect(billingEmail.sendInvoice(staff, "x")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(billingEmail.resendQuote(staff, "x")).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

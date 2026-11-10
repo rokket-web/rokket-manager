@@ -11,6 +11,7 @@ import {
   declineQuoteAction,
   deleteQuoteAction,
   invoiceFromQuoteAction,
+  resendQuoteAction,
   sendQuoteAction,
 } from "../actions";
 
@@ -22,10 +23,10 @@ export default async function QuotePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, notice } = await searchParams;
   const actor = await requireActor(["ADMIN"]);
   const q = await getQuote(actor, id);
   const now = new Date();
@@ -60,6 +61,11 @@ export default async function QuotePage({
         </p>
       </div>
 
+      {notice && (
+        <p role="status" className="text-sm">
+          {notice}
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-destructive text-sm">
           {error}
@@ -74,9 +80,9 @@ export default async function QuotePage({
             </Link>
             <ConfirmButton
               action={sendQuoteAction.bind(null, id)}
-              label="Mark as sent"
-              prompt="Assign a number and lock this quote?"
-              confirmLabel="Yes, mark sent"
+              label="Send quote"
+              prompt="Email the PDF to the client and lock this quote?"
+              confirmLabel="Yes, send"
             />
             <ConfirmButton
               action={deleteQuoteAction.bind(null, id)}
@@ -87,8 +93,19 @@ export default async function QuotePage({
             />
           </>
         )}
+        {q.number && (
+          <a href={`/api/quotes/${id}/pdf`} className={buttonVariants({ variant: "outline" })}>
+            Download PDF
+          </a>
+        )}
         {q.status === "SENT" && (
           <>
+            <ConfirmButton
+              action={resendQuoteAction.bind(null, id)}
+              label="Resend email"
+              prompt="Email this quote to the client again?"
+              confirmLabel="Yes, resend"
+            />
             <ConfirmButton
               action={acceptQuoteAction.bind(null, id)}
               label="Record accepted"

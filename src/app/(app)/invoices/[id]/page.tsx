@@ -9,7 +9,7 @@ import { centsToDollarsInput, formatCents } from "@/lib/money";
 import { requireActor } from "@/server/authz/session";
 import { getInvoice } from "@/server/services/invoices";
 import { fmtDate } from "../../projects/status-badges";
-import { deleteInvoiceAction, recordPaymentAction, sendInvoiceAction, voidInvoiceAction } from "../actions";
+import { deleteInvoiceAction, recordPaymentAction, resendInvoiceAction, sendInvoiceAction, voidInvoiceAction } from "../actions";
 
 export const metadata = { title: "Invoice" };
 export const dynamic = "force-dynamic";
@@ -19,10 +19,10 @@ export default async function InvoicePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; notice?: string }>;
 }) {
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, notice } = await searchParams;
   const actor = await requireActor(["ADMIN"]);
   const inv = await getInvoice(actor, id);
   const now = new Date();
@@ -65,6 +65,11 @@ export default async function InvoicePage({
         </p>
       </div>
 
+      {notice && (
+        <p role="status" className="text-sm">
+          {notice}
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-destructive text-sm">
           {error}
@@ -79,9 +84,9 @@ export default async function InvoicePage({
             </Link>
             <ConfirmButton
               action={sendInvoiceAction.bind(null, id)}
-              label="Mark as sent"
-              prompt="Assign a number and lock this invoice?"
-              confirmLabel="Yes, mark sent"
+              label="Send invoice"
+              prompt="Email the PDF to the client and lock this invoice?"
+              confirmLabel="Yes, send"
             />
             <ConfirmButton
               action={deleteInvoiceAction.bind(null, id)}
@@ -91,6 +96,19 @@ export default async function InvoicePage({
               destructive
             />
           </>
+        )}
+        {inv.number && (
+          <a href={`/api/invoices/${id}/pdf`} className={buttonVariants({ variant: "outline" })}>
+            Download PDF
+          </a>
+        )}
+        {canPay && (
+          <ConfirmButton
+            action={resendInvoiceAction.bind(null, id)}
+            label="Resend email"
+            prompt="Email this invoice to the client again?"
+            confirmLabel="Yes, resend"
+          />
         )}
         {(inv.status === "SENT" || inv.status === "PARTIALLY_PAID") && !hasPayments && (
           <ConfirmButton

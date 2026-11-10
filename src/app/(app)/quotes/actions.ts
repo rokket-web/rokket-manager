@@ -5,12 +5,17 @@ import { redirect } from "next/navigation";
 import { requireActor } from "@/server/authz/session";
 import { ConflictError } from "@/server/errors";
 import { createInvoiceFromQuote } from "@/server/services/invoices";
-import { createQuote, deleteDraftQuote, markQuoteSent, recordQuoteResponse, updateQuote } from "@/server/services/quotes";
+import { createQuote, deleteDraftQuote, recordQuoteResponse, updateQuote } from "@/server/services/quotes";
+import { resendQuote, sendQuote, type SendResult } from "@/server/services/billing-email";
 import { toFormState, type FormState } from "../clients/form-state";
 import { docValues, formToDoc } from "../billing-form";
 
-const back = (id: string, error?: string) =>
-  redirect(`/quotes/${id}${error ? `?error=${encodeURIComponent(error)}` : ""}`);
+const back = (id: string, error?: string, notice?: string) => {
+  const p = new URLSearchParams();
+  if (error) p.set("error", error);
+  if (notice) p.set("notice", notice);
+  redirect(`/quotes/${id}${p.size ? `?${p}` : ""}`);
+};
 
 export async function createQuoteAction(_p: FormState, fd: FormData): Promise<FormState> {
   const actor = await requireActor(["ADMIN"]);
@@ -39,20 +44,30 @@ export async function updateQuoteAction(id: string, _p: FormState, fd: FormData)
 }
 
 async function guarded(id: string, fn: () => Promise<unknown>) {
+  let res: { notice?: string; error?: string } = {};
   try {
-    await fn();
+    const r = await fn();
+    if (r && typeof r === "object" && "emailed" in r) {
+      const o = r as SendResult;
+      res = o.emailed ? { notice: `Emailed to ${o.to}.` } : { error: o.error };
+    }
   } catch (e) {
     if (e instanceof ConflictError) back(id, e.message);
     throw e;
   }
   revalidatePath("/quotes");
   revalidatePath(`/quotes/${id}`);
-  back(id);
+  back(id, res.error, res.notice);
 }
 
 export async function sendQuoteAction(id: string) {
   const actor = await requireActor(["ADMIN"]);
-  await guarded(id, () => markQuoteSent(actor, id));
+  await guarded(id, () => sendQuote(actor, id));
+}
+
+export async function resendQuoteAction(id: string) {
+  const actor = await requireActor(["ADMIN"]);
+  await guarded(id, () => resendQuote(actor, id));
 }
 
 export async function acceptQuoteAction(id: string) {

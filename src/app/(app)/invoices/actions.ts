@@ -8,16 +8,22 @@ import {
   createInvoice,
   createInvoiceFromTime,
   deleteDraftInvoice,
-  markInvoiceSent,
   updateInvoice,
   voidInvoice,
 } from "@/server/services/invoices";
 import { recordManualPayment } from "@/server/services/payments";
+import { resendInvoice, sendInvoice, type SendResult } from "@/server/services/billing-email";
 import { toFormState, type FormState } from "../clients/form-state";
 import { docValues, formToDoc } from "../billing-form";
 
-const back = (id: string, error?: string) =>
-  redirect(`/invoices/${id}${error ? `?error=${encodeURIComponent(error)}` : ""}`);
+const back = (id: string, error?: string, notice?: string) => {
+  const p = new URLSearchParams();
+  if (error) p.set("error", error);
+  if (notice) p.set("notice", notice);
+  redirect(`/invoices/${id}${p.size ? `?${p}` : ""}`);
+};
+
+const outcome = (r: SendResult) => (r.emailed ? { notice: `Emailed to ${r.to}.` } : { error: r.error });
 
 export async function createInvoiceAction(_p: FormState, fd: FormData): Promise<FormState> {
   const actor = await requireActor(["ADMIN"]);
@@ -64,20 +70,27 @@ export async function createFromTimeAction(_p: FormState, fd: FormData): Promise
 }
 
 async function guarded(id: string, fn: () => Promise<unknown>) {
+  let res: { notice?: string; error?: string } = {};
   try {
-    await fn();
+    const r = await fn();
+    if (r && typeof r === "object" && "emailed" in r) res = outcome(r as SendResult);
   } catch (e) {
     if (e instanceof ConflictError) back(id, e.message);
     throw e;
   }
   revalidatePath("/invoices");
   revalidatePath(`/invoices/${id}`);
-  back(id);
+  back(id, res.error, res.notice);
 }
 
 export async function sendInvoiceAction(id: string) {
   const actor = await requireActor(["ADMIN"]);
-  await guarded(id, () => markInvoiceSent(actor, id));
+  await guarded(id, () => sendInvoice(actor, id));
+}
+
+export async function resendInvoiceAction(id: string) {
+  const actor = await requireActor(["ADMIN"]);
+  await guarded(id, () => resendInvoice(actor, id));
 }
 
 export async function voidInvoiceAction(id: string) {
