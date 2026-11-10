@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ENTER_HINT, enterToSend } from "@/components/messages/enter-to-send";
 import type { FormState } from "@/app/(app)/clients/form-state";
 
 export function PortalMessageForm({ action }: { action: (prev: FormState, fd: FormData) => Promise<FormState> }) {
@@ -15,7 +16,15 @@ export function PortalMessageForm({ action }: { action: (prev: FormState, fd: Fo
   return (
     <form ref={ref} action={formAction} className="space-y-2">
       <Label htmlFor="portal-message-body">Write a message</Label>
-      <Textarea id="portal-message-body" name="body" rows={4} required maxLength={5000} />
+      <Textarea
+        id="portal-message-body"
+        name="body"
+        rows={4}
+        required
+        maxLength={5000}
+        onKeyDown={(e) => enterToSend(e, pending)}
+      />
+      <p className="text-muted-foreground text-xs">{ENTER_HINT}</p>
       {state.error && (
         <p role="alert" className="text-destructive text-xs">
           {state.fieldErrors?.body?.join(" ") ?? state.error}

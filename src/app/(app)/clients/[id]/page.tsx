@@ -25,7 +25,7 @@ import { getClientEmailRecipient } from "@/server/services/client-email";
 import { listClientEmails } from "@/server/services/email-log";
 import { EmailStatusBadge } from "@/components/email/status-badge";
 import { emailKindLabel } from "@/lib/email-events";
-import { Thread } from "@/components/messages/thread";
+import { LiveThread } from "@/components/messages/thread";
 import {
   addContactAction,
   addNoteAction,
@@ -509,13 +509,14 @@ async function MessagesTab({ actor, clientId }: { actor: Awaited<ReturnType<type
           This client has no active portal access, so they cannot see messages. Invite them from the Portal access tab, or use Email.
         </p>
       )}
-      <Thread
+      <LiveThread
         mine="admin"
-        messages={messages.map((m) => ({
+        endpoint={`/api/clients/${clientId}/messages`}
+        initial={messages.map((m) => ({
           id: m.id,
           fromClient: m.fromClient,
           body: m.body,
-          createdAt: m.createdAt,
+          createdAt: m.createdAt.toISOString(),
           senderName: m.authorId ? (names[m.authorId] ?? "Unknown") : "System",
         }))}
       />
