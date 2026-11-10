@@ -8,13 +8,14 @@ import { getMailer } from "@/server/mail";
 import { balanceCents, isOverdue } from "@/lib/billing";
 import { formatCents } from "@/lib/money";
 import { sharedProgress } from "@/lib/progress";
+import { portalQuoteResponseSchema } from "@/lib/validation/quote-response";
 import { invoicePdfBytes, quotePdfBytes } from "./billing-docs";
 import { checkoutForInvoice } from "./stripe-payments";
 import { readCompanyProfile } from "./settings";
 
 /** Drafts and voided invoices, and draft quotes, are internal: clients never see them. */
 const INVOICE_VISIBLE = ["SENT", "PARTIALLY_PAID", "PAID"] as const;
-const QUOTE_VISIBLE = ["SENT", "ACCEPTED", "DECLINED"] as const;
+const QUOTE_VISIBLE = ["SENT", "ACCEPTED", "DECLINED", "CHANGES_REQUESTED"] as const;
 
 export function utcToday(): Date {
   const d = new Date();
@@ -163,7 +164,24 @@ export async function getPortalQuote(actor: ActorLike, id: string) {
     totalCents: q.totalCents,
     lines: q.lines,
     expired: q.status === "SENT" && !!q.validUntil && q.validUntil < utcToday(),
+    history: await portalQuoteHistory(q.id),
   };
+}
+
+/** Explicit fields only: no author ids reach the client, just a display name. */
+async function portalQuoteHistory(quoteId: string) {
+  const rows = await withRetry(() => db.quoteNote.findMany({ where: { quoteId }, orderBy: { createdAt: "asc" }, take: 200 }));
+  const ids = [...new Set(rows.filter((r) => !r.fromClient).map((r) => r.authorId).filter((i): i is string => !!i))];
+  const users = ids.length ? await db.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+  const names = Object.fromEntries(users.map((u) => [u.id, u.name]));
+  return rows.map((r) => ({
+    id: r.id,
+    fromClient: r.fromClient,
+    action: r.action,
+    body: r.body,
+    createdAt: r.createdAt,
+    authorName: r.fromClient ? "You" : ((r.authorId && names[r.authorId]) || "Our team"),
+  }));
 }
 
 export async function renderPortalQuotePdf(actor: ActorLike, id: string) {
@@ -172,15 +190,21 @@ export async function renderPortalQuotePdf(actor: ActorLike, id: string) {
   return { bytes: await quotePdfBytes(q, company), filename: `${q.number}.pdf` };
 }
 
-/** The client accepts or declines. Audited with who, when and from where; only a live SENT quote can be answered, once. */
+/**
+ * The client accepts, declines or asks for edits, with an optional note (required for edits). Audited with who, when and
+ * from where; only a live SENT quote can be answered, once. "Request edits" parks the quote for the admin to revise.
+ */
 export async function respondToPortalQuote(
   actor: ActorLike,
   id: string,
-  response: "ACCEPTED" | "DECLINED",
+  /** Just the response ("ACCEPTED"), or the response plus the client's note. */
+  raw: string | { response: string; note?: string },
   meta: { ip?: string | null } = {},
 ) {
   const clientId = portalClientId(actor);
-  if (response !== "ACCEPTED" && response !== "DECLINED") throw new ConflictError("Invalid response.");
+  const parsed = portalQuoteResponseSchema.safeParse(typeof raw === "string" ? { response: raw } : raw);
+  if (!parsed.success) throw new ConflictError(parsed.error.issues[0]?.message ?? "Invalid response.");
+  const { response, note } = parsed.data;
   const result = await db.$transaction(async (tx) => {
     const q = await tx.quote.findFirst({ where: { id, clientId, status: { in: [...QUOTE_VISIBLE] } } });
     if (!q) throw new NotFoundError("Quote not found.");
@@ -190,34 +214,48 @@ export async function respondToPortalQuote(
     const won = await tx.quote.updateMany({ where: { id, status: "SENT" }, data: { status: response, respondedAt: new Date() } });
     if (won.count === 0) throw new ConflictError("This quote has already been answered.");
     const user = await tx.user.findUnique({ where: { id: actor.id }, select: { name: true } });
-    const verb = response === "ACCEPTED" ? "accepted" : "declined";
+    const verb = RESPONSE_VERB[response];
+    await tx.quoteNote.create({ data: { quoteId: id, authorId: actor.id, fromClient: true, action: ACTION[response], body: note ?? null } });
     await tx.activity.create({
-      data: { clientId, actorId: actor.id, type: `quote.${verb}`, summary: `Quote ${q.number} ${verb} by ${user?.name ?? "the client"} in the portal` },
+      data: {
+        clientId,
+        actorId: actor.id,
+        type: `quote.${response.toLowerCase()}`,
+        summary: `Quote ${q.number} ${verb} by ${user?.name ?? "the client"} in the portal`,
+      },
     });
     await audit(
-      { actorId: actor.id, action: `quote.${verb}.portal`, entity: "Quote", entityId: id, ip: meta.ip ?? null, meta: { number: q.number } },
+      { actorId: actor.id, action: `quote.${response.toLowerCase()}.portal`, entity: "Quote", entityId: id, ip: meta.ip ?? null, meta: { number: q.number, hasNote: !!note } },
       tx,
     );
-    return { number: q.number, title: q.title, totalCents: q.totalCents, currency: q.currency, by: user?.name ?? "The client" };
+    return { id, number: q.number, title: q.title, totalCents: q.totalCents, currency: q.currency, by: user?.name ?? "The client", note: note ?? null };
   });
   void notifyQuoteResponse(response, result, clientId);
   return result;
 }
 
+const RESPONSE_VERB = { ACCEPTED: "accepted", DECLINED: "declined", CHANGES_REQUESTED: "had edits requested" } as const;
+const ACTION = { ACCEPTED: "accepted", DECLINED: "declined", CHANGES_REQUESTED: "changes_requested" } as const;
+
 /** Best-effort heads-up to the company's billing email. Never blocks or fails the client's action. */
 async function notifyQuoteResponse(
-  response: "ACCEPTED" | "DECLINED",
-  q: { number: string | null; title: string | null; totalCents: number; currency: string; by: string },
+  response: keyof typeof RESPONSE_VERB,
+  q: { id: string; number: string | null; title: string | null; totalCents: number; currency: string; by: string; note: string | null },
   clientId: string,
 ) {
   try {
     const company = await readCompanyProfile();
     if (!company.email) return;
-    const verb = response === "ACCEPTED" ? "accepted" : "declined";
+    const what = response === "CHANGES_REQUESTED" ? "requested edits to" : response === "ACCEPTED" ? "accepted" : "declined";
+    const lines = [
+      `${q.by} ${what} quote ${q.number}${q.title ? ` (${q.title})` : ""} for ${formatCents(q.totalCents, q.currency)} in the client portal.`,
+      ...(q.note ? [`Their note: ${q.note}`] : []),
+      ...(response === "CHANGES_REQUESTED" ? [`Revise and re-send it here: ${appBaseUrl()}/quotes/${q.id}`] : []),
+    ];
     await getMailer().send({
       to: company.email,
-      subject: `Quote ${q.number} ${verb}`,
-      text: `${q.by} ${verb} quote ${q.number}${q.title ? ` (${q.title})` : ""} for ${formatCents(q.totalCents, q.currency)} in the client portal.`,
+      subject: `Quote ${q.number} ${response === "CHANGES_REQUESTED" ? "needs edits" : response === "ACCEPTED" ? "accepted" : "declined"}`,
+      text: lines.join("\n\n"),
       log: { kind: "quote_response", clientId },
     });
   } catch {

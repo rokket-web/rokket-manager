@@ -17,6 +17,7 @@ const STATUSES = [
   ["SENT", "Sent"],
   ["ACCEPTED", "Accepted"],
   ["DECLINED", "Declined"],
+  ["CHANGES_REQUESTED", "Edits requested"],
 ];
 
 export default async function QuotesPage({ searchParams }: { searchParams: Promise<SP> }) {

@@ -6,7 +6,7 @@ import { requireActor } from "@/server/authz/session";
 import { ConflictError } from "@/server/errors";
 import { createInvoiceFromQuote } from "@/server/services/invoices";
 import { createQuote, deleteDraftQuote, recordQuoteResponse, updateQuote } from "@/server/services/quotes";
-import { resendQuote, sendQuote, type SendResult } from "@/server/services/billing-email";
+import { resendQuote, sendQuote, sendRevisedQuote, type SendResult } from "@/server/services/billing-email";
 import { toFormState, type FormState } from "../clients/form-state";
 import { docValues, formToDoc } from "../billing-form";
 
@@ -63,6 +63,11 @@ async function guarded(id: string, fn: () => Promise<unknown>) {
 export async function sendQuoteAction(id: string) {
   const actor = await requireActor(["ADMIN"]);
   await guarded(id, () => sendQuote(actor, id));
+}
+
+export async function sendRevisedQuoteAction(id: string, fd: FormData) {
+  const actor = await requireActor(["ADMIN"]);
+  await guarded(id, () => sendRevisedQuote(actor, id, String(fd.get("note") ?? "")));
 }
 
 export async function resendQuoteAction(id: string) {

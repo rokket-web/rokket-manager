@@ -14,11 +14,11 @@ export default async function EditQuotePage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const actor = await requireActor(["ADMIN"]);
   const q = await getQuote(actor, id);
-  if (q.status !== "DRAFT") redirect(`/quotes/${id}`);
+  if (q.status !== "DRAFT" && q.status !== "CHANGES_REQUESTED") redirect(`/quotes/${id}`);
   const { clients, projects } = await listBillingOptions(actor);
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Edit draft quote</h1>
+      <h1 className="text-2xl font-semibold">{q.status === "DRAFT" ? "Edit draft quote" : `Revise quote ${q.number}`}</h1>
       <DocForm
         kind="quote"
         clients={clients}

@@ -154,7 +154,7 @@ async function adminMoney(today: Date, now: Date) {
       where: { status: { in: ["SENT", "PARTIALLY_PAID", "PAID"] }, sentAt: { gte: from, lt: to } },
       _sum: { totalCents: true },
     });
-  const [open, thisMonth, lastMonth, staleQuotes, readyInstallments, emailProblems, unread] = await Promise.all([
+  const [open, thisMonth, lastMonth, staleQuotes, editQuotes, readyInstallments, emailProblems, unread] = await Promise.all([
     db.invoice.findMany({
       where: { status: { in: ["SENT", "PARTIALLY_PAID"] } },
       orderBy: { dueDate: { sort: "asc", nulls: "last" } },
@@ -168,6 +168,12 @@ async function adminMoney(today: Date, now: Date) {
       orderBy: { sentAt: "asc" },
       take: 5,
       select: { id: true, number: true, sentAt: true, client: { select: { name: true } } },
+    }),
+    db.quote.findMany({
+      where: { status: "CHANGES_REQUESTED" },
+      orderBy: { respondedAt: "asc" },
+      take: 5,
+      select: { id: true, number: true, respondedAt: true, client: { select: { name: true } } },
     }),
     db.billingInstallment.findMany({
       where: { invoiceId: null, project: { status: "COMPLETED", billingType: "FLAT_FEE" } },
@@ -196,6 +202,13 @@ async function adminMoney(today: Date, now: Date) {
       title: `${i.number ?? "Invoice"} is overdue`,
       detail: `${i.client.name} · ${formatCents(balanceCents(i), i.currency)} · ${plural(daysBetween(i.dueDate!, today), "day")} late`,
       href: `/invoices/${i.id}`,
+    })),
+    ...editQuotes.map<AttentionItem>((q) => ({
+      id: `edits-${q.id}`,
+      severity: "high",
+      title: `${q.number ?? "Quote"}: ${q.client.name} asked for edits`,
+      detail: q.respondedAt ? `Requested ${plural(daysBetween(q.respondedAt, now), "day")} ago` : "Revise and re-send it",
+      href: `/quotes/${q.id}`,
     })),
     ...(emailProblems > 0
       ? [

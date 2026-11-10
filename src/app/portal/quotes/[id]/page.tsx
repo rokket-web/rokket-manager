@@ -1,12 +1,13 @@
 import { orNotFound } from "@/lib/not-found";
 import { BillingStatusBadge } from "@/components/billing/badges";
-import { ConfirmButton } from "@/components/billing/confirm-button";
 import { LinesTable } from "@/components/billing/doc-view";
 import { buttonVariants } from "@/components/ui/button";
 import { fmtDateUtc } from "@/lib/format";
 import { requireActor } from "@/server/authz/session";
 import { getPortalQuote } from "@/server/services/portal";
-import { acceptQuoteAction, declineQuoteAction } from "../../actions";
+import { QuoteHistory } from "@/components/quotes/history";
+import { acceptQuoteAction, declineQuoteAction, requestQuoteEditsAction } from "../../actions";
+import { QuoteResponseForm } from "./response-form";
 
 export const metadata = { title: "Quote" };
 export const dynamic = "force-dynamic";
@@ -51,28 +52,26 @@ export default async function PortalQuotePage({
       )}
       {q.expired && <p className="text-muted-foreground text-sm">This quote has expired. Please contact us for an updated one.</p>}
 
+      {q.status === "CHANGES_REQUESTED" && (
+        <p role="status" className="bg-tint-amber max-w-2xl rounded-xl p-3 text-sm">
+          You asked for changes{q.respondedAt ? ` on ${fmtDateUtc(q.respondedAt)}` : ""}. We&apos;ll send you a revised quote
+          to review.
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
-        {open && (
-          <>
-            <ConfirmButton
-              action={acceptQuoteAction.bind(null, id)}
-              label="Accept quote"
-              prompt="Accept this quote as written?"
-              confirmLabel="Yes, accept"
-            />
-            <ConfirmButton
-              action={declineQuoteAction.bind(null, id)}
-              label="Decline"
-              prompt="Decline this quote?"
-              confirmLabel="Yes, decline"
-              destructive
-            />
-          </>
-        )}
         <a href={`/api/portal/quotes/${id}/pdf`} className={buttonVariants({ variant: "outline" })}>
           Download PDF
         </a>
       </div>
+
+      {open && (
+        <QuoteResponseForm
+          accept={acceptQuoteAction.bind(null, id)}
+          decline={declineQuoteAction.bind(null, id)}
+          requestEdits={requestQuoteEditsAction.bind(null, id)}
+        />
+      )}
 
       <LinesTable
         lines={q.lines}
@@ -99,6 +98,8 @@ export default async function PortalQuotePage({
           )}
         </div>
       )}
+
+      <QuoteHistory items={q.history} viewer="client" />
     </div>
   );
 }

@@ -4,7 +4,8 @@ import { ConfirmButton } from "@/components/billing/confirm-button";
 import { LinesTable } from "@/components/billing/doc-view";
 import { buttonVariants } from "@/components/ui/button";
 import { requireActor } from "@/server/authz/session";
-import { getQuote } from "@/server/services/quotes";
+import { getQuote, getQuoteHistory } from "@/server/services/quotes";
+import { QuoteHistory } from "@/components/quotes/history";
 import { fmtDate } from "../../projects/status-badges";
 import {
   acceptQuoteAction,
@@ -13,7 +14,9 @@ import {
   invoiceFromQuoteAction,
   resendQuoteAction,
   sendQuoteAction,
+  sendRevisedQuoteAction,
 } from "../actions";
+import { ReviseForm } from "./revise-form";
 
 export const metadata = { title: "Quote" };
 export const dynamic = "force-dynamic";
@@ -28,7 +31,8 @@ export default async function QuotePage({
   const { id } = await params;
   const { error, notice } = await searchParams;
   const actor = await requireActor(["ADMIN"]);
-  const q = await getQuote(actor, id);
+  const [q, history] = await Promise.all([getQuote(actor, id), getQuoteHistory(actor, id)]);
+  const latestRequest = [...history].reverse().find((h) => h.action === "changes_requested");
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const expired = q.status === "SENT" && !!q.validUntil && q.validUntil < today;
@@ -72,7 +76,23 @@ export default async function QuotePage({
         </p>
       )}
 
+      {q.status === "CHANGES_REQUESTED" && (
+        <div role="status" className="bg-tint-amber max-w-2xl space-y-1 rounded-xl p-4 text-sm">
+          <p className="font-medium">{q.client.name} asked for edits</p>
+          {latestRequest?.body && <p className="whitespace-pre-wrap">{latestRequest.body}</p>}
+          <p className="text-muted-foreground text-xs">Edit the quote, then send the revised version.</p>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
+        {q.status === "CHANGES_REQUESTED" && (
+          <>
+            <Link href={`/quotes/${id}/edit`} className={buttonVariants({ variant: "outline" })}>
+              Edit quote
+            </Link>
+            <ReviseForm action={sendRevisedQuoteAction.bind(null, id)} />
+          </>
+        )}
         {q.status === "DRAFT" && (
           <>
             <Link href={`/quotes/${id}/edit`} className={buttonVariants({ variant: "outline" })}>
@@ -161,6 +181,8 @@ export default async function QuotePage({
           )}
         </div>
       )}
+
+      <QuoteHistory items={history} viewer="admin" />
     </div>
   );
 }
