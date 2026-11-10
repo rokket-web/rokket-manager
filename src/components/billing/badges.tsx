@@ -1,15 +1,15 @@
 import { Badge } from "@/components/ui/badge";
 
 const STATUS: Record<string, [string, string]> = {
-  DRAFT: ["Draft", "bg-slate-200 text-slate-800 hover:bg-slate-200"],
-  SENT: ["Sent", "bg-blue-100 text-blue-900 hover:bg-blue-100"],
-  ACCEPTED: ["Accepted", "bg-emerald-100 text-emerald-900 hover:bg-emerald-100"],
-  DECLINED: ["Declined", "bg-red-100 text-red-900 hover:bg-red-100"],
-  EXPIRED: ["Expired", "bg-amber-100 text-amber-900 hover:bg-amber-100"],
-  PARTIALLY_PAID: ["Partially paid", "bg-amber-100 text-amber-900 hover:bg-amber-100"],
-  PAID: ["Paid", "bg-emerald-100 text-emerald-900 hover:bg-emerald-100"],
-  VOID: ["Void", "bg-slate-200 text-slate-600 hover:bg-slate-200"],
-  OVERDUE: ["Overdue", "bg-red-100 text-red-900 hover:bg-red-100"],
+  DRAFT: ["Draft", "bg-slate-100 text-slate-500 hover:bg-slate-100 dark:bg-white/10 dark:text-slate-300"],
+  SENT: ["Sent", "bg-violet-100 text-violet-700 hover:bg-violet-100 dark:bg-violet-500/20 dark:text-violet-300"],
+  ACCEPTED: ["Accepted", "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300"],
+  DECLINED: ["Declined", "bg-rose-100 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/20 dark:text-rose-300"],
+  EXPIRED: ["Expired", "bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/20 dark:text-amber-300"],
+  PARTIALLY_PAID: ["Partially paid", "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300"],
+  PAID: ["Paid", "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300"],
+  VOID: ["Void", "bg-slate-100 text-slate-500 hover:bg-slate-100 dark:bg-white/10 dark:text-slate-300"],
+  OVERDUE: ["Overdue", "bg-rose-100 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/20 dark:text-rose-300"],
 };
 
 export function BillingStatusBadge({ status }: { status: string }) {
