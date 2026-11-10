@@ -3,7 +3,9 @@ import { getSessionCookie } from "better-auth/cookies";
 
 // Optimistic gate only (cookie presence). Real authorization happens in
 // layouts and the data layer via requireActor(); never rely on this alone.
-const PUBLIC = ["/login", "/api/auth", "/api/health"];
+// /pay/<token> is the public invoice payment link (the unguessable token is its authorisation).
+// /api/webhooks/* are server-to-server and verify their own signatures.
+const PUBLIC = ["/login", "/api/auth", "/api/health", "/pay", "/api/webhooks"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

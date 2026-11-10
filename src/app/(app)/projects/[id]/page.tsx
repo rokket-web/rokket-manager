@@ -71,6 +71,9 @@ export default async function ProjectPage({
         </Link>
         {isAdmin && (
           <div className="ml-auto flex items-center gap-2">
+            <Link href={`/invoices/from-time?projectId=${id}`} className={buttonVariants({ variant: "outline" })}>
+              Invoice time
+            </Link>
             <Link href={`${base}/edit`} className={buttonVariants({ variant: "outline" })}>
               Edit
             </Link>

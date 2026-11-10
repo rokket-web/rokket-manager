@@ -37,6 +37,14 @@ describe("canAccessPath", () => {
     expect(canAccessPath("STAFF", "/time")).toBe(true);
     for (const p of ["/projects", "/projects/abc", "/time"]) expect(canAccessPath("CLIENT", p)).toBe(false);
   });
+  it("keeps quotes and invoices admin-only", () => {
+    for (const p of ["/quotes", "/quotes/new", "/quotes/abc", "/invoices", "/invoices/abc/edit", "/invoices/from-time"]) {
+      expect(canAccessPath("ADMIN", p)).toBe(true);
+      expect(canAccessPath("STAFF", p)).toBe(false);
+      expect(canAccessPath("CLIENT", p)).toBe(false);
+      expect(canAccessPath(null, p)).toBe(false);
+    }
+  });
   it("does not match look-alike prefixes", () => {
     expect(canAccessPath("CLIENT", "/portalx")).toBe(true); // not the portal area; unlisted
     expect(canAccessPath("CLIENT", "/dashboardx")).toBe(true);
@@ -50,6 +58,8 @@ describe("navFor / homeFor", () => {
       "Clients",
       "Projects",
       "Time",
+      "Quotes",
+      "Invoices",
       "Settings",
       "Users",
     ]);

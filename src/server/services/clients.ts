@@ -258,6 +258,9 @@ export async function deleteClient(actor: ActorLike, id: string) {
     if (await tx.project.count({ where: { clientId: id } })) {
       throw new ConflictError("This client has projects. Delete or finish those first.");
     }
+    if ((await tx.invoice.count({ where: { clientId: id } })) + (await tx.quote.count({ where: { clientId: id } }))) {
+      throw new ConflictError("This client has quotes or invoices, which must be kept for your records.");
+    }
     const files = await tx.fileAsset.findMany({ where: { clientId: id }, select: { storageKey: true } });
     await audit(
       { actorId: actor.id, action: "client.delete", entity: "Client", entityId: id, meta: { name: c.name } },
