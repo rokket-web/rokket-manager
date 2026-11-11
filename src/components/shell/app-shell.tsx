@@ -3,9 +3,15 @@ import { navFor } from "@/server/authz/policy";
 import { ThemeToggle } from "./theme-toggle";
 import { SignOutButton } from "./sign-out-button";
 import { NavLinks } from "./nav-links";
+import { portalUnreadCount } from "@/server/services/messages";
 
-export function AppShell({ actor, children }: { actor: Actor; children: React.ReactNode }) {
+export async function AppShell({ actor, children }: { actor: Actor; children: React.ReactNode }) {
   const nav = navFor(actor.role);
+  // Clients get an unread badge on their Messages tab. A hiccup here must never break the whole page.
+  const unread =
+    actor.role === "CLIENT" && actor.clientId
+      ? { href: "/portal/messages", endpoint: "/api/portal/messages/unread", count: await portalUnreadCount(actor).catch(() => 0) }
+      : undefined;
   const initial = actor.name.trim().charAt(0).toUpperCase() || "?";
   return (
     <div className="flex min-h-screen md:p-8">
@@ -17,7 +23,7 @@ export function AppShell({ actor, children }: { actor: Actor; children: React.Re
               {actor.role.toLowerCase()}
             </span>
           </div>
-          <NavLinks items={nav.map(({ label, href }) => ({ label, href }))} />
+          <NavLinks items={nav.map(({ label, href }) => ({ label, href }))} unread={unread} />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex items-center justify-end gap-3 px-6 py-4">
