@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { BillingStatusBadge } from "@/components/billing/badges";
+import { AutoRefresh } from "@/components/billing/auto-refresh";
 import { ConfirmButton } from "@/components/billing/confirm-button";
 import { LinesTable } from "@/components/billing/doc-view";
 import { FieldForm } from "@/components/forms/field-form";
 import { buttonVariants } from "@/components/ui/button";
-import { balanceCents, isOverdue } from "@/lib/billing";
+import { balanceCents, displayInvoiceStatus } from "@/lib/billing";
 import { centsToDollarsInput, formatCents } from "@/lib/money";
 import { RefundForm } from "@/components/billing/refund-form";
 import { payUrl, stripeConfigured } from "@/server/stripe";
 import { requireActor } from "@/server/authz/session";
-import { getInvoice } from "@/server/services/invoices";
+import { getInvoice, refreshInvoicePayments } from "@/server/services/invoices";
 import { fmtDate } from "../../projects/status-badges";
 import { deleteInvoiceAction, recordPaymentAction, refundPaymentAction, resendInvoiceAction, sendInvoiceAction, voidInvoiceAction } from "../actions";
 
@@ -26,10 +27,11 @@ export default async function InvoicePage({
   const { id } = await params;
   const { error, notice } = await searchParams;
   const actor = await requireActor(["ADMIN"]);
+  await refreshInvoicePayments(actor, id); // pull the latest from Stripe so Paid / Pending is current
   const inv = await getInvoice(actor, id);
+  const processing = inv.payments.filter((p) => p.status === "PROCESSING");
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const overdue = isOverdue(inv, today);
   const balance = balanceCents(inv);
   const canPay = inv.status === "SENT" || inv.status === "PARTIALLY_PAID";
   const hasPayments = inv.payments.some((p) => p.status === "SUCCEEDED");
@@ -39,7 +41,7 @@ export default async function InvoicePage({
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold">Invoice {inv.number ?? "(draft)"}</h1>
-          <BillingStatusBadge status={overdue ? "OVERDUE" : inv.status} />
+          <BillingStatusBadge status={displayInvoiceStatus({ ...inv, processing: processing.length > 0 }, today)} />
         </div>
         <p className="text-muted-foreground text-sm">
           <Link href={`/clients/${inv.client.id}`} className="hover:underline">
@@ -67,6 +69,14 @@ export default async function InvoicePage({
           {inv.paidAt && ` · Paid ${fmtDate(inv.paidAt)}`}
         </p>
       </div>
+
+      {processing.length > 0 && (
+        <p role="status" className="bg-tint-amber max-w-2xl rounded-xl p-3 text-sm">
+          <span className="font-medium">Payment pending.</span> {formatCents(processing.reduce((s, p) => s + p.amountCents, 0), inv.currency)} was
+          submitted through Stripe and is waiting to settle. This page updates when it clears; bank payments can take a few days.
+        </p>
+      )}
+      <AutoRefresh active={processing.length > 0} everyMs={15_000} />
 
       {notice && (
         <p role="status" className="text-sm">

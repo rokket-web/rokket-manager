@@ -10,7 +10,7 @@ import { formatCents } from "@/lib/money";
 import { sharedProgress } from "@/lib/progress";
 import { portalQuoteResponseSchema } from "@/lib/validation/quote-response";
 import { invoicePdfBytes, quotePdfBytes } from "./billing-docs";
-import { checkoutForInvoice } from "./stripe-payments";
+import { checkoutForInvoice, reconcileStripePayments } from "./stripe-payments";
 import { readCompanyProfile } from "./settings";
 
 /** Drafts and voided invoices, and draft quotes, are internal: clients never see them. */
@@ -56,7 +56,17 @@ export async function listPortalInvoices(actor: ActorLike) {
       where: { clientId, status: { in: [...INVOICE_VISIBLE] } },
       orderBy: [{ issueDate: "desc" }, { createdAt: "desc" }],
       take: 200,
-      select: { id: true, number: true, status: true, issueDate: true, dueDate: true, totalCents: true, paidCents: true, currency: true },
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        issueDate: true,
+        dueDate: true,
+        totalCents: true,
+        paidCents: true,
+        currency: true,
+        payments: { where: { status: "PROCESSING" }, select: { id: true }, take: 1 },
+      },
     }),
   );
 }
@@ -77,9 +87,21 @@ async function loadPortalInvoice(clientId: string, id: string) {
   return inv;
 }
 
+/** Client opened their invoice: confirm any in-flight payment with Stripe first. Scoped to their own invoice. */
+export async function refreshPortalInvoicePayments(actor: ActorLike, id: string) {
+  const inv = await loadPortalInvoice(portalClientId(actor), id);
+  await reconcileStripePayments(inv.id);
+}
+
 /** Only what a client should see: no Stripe ids, internal references or admin notes about payments. */
 export async function getPortalInvoice(actor: ActorLike, id: string) {
-  const inv = await loadPortalInvoice(portalClientId(actor), id);
+  const clientId = portalClientId(actor);
+  const inv = await loadPortalInvoice(clientId, id);
+  const processing = await db.payment.aggregate({
+    where: { invoiceId: inv.id, status: "PROCESSING" },
+    _sum: { amountCents: true },
+    _count: true,
+  });
   return {
     id: inv.id,
     number: inv.number,
@@ -94,6 +116,8 @@ export async function getPortalInvoice(actor: ActorLike, id: string) {
     taxCents: inv.taxCents,
     totalCents: inv.totalCents,
     paidCents: inv.paidCents,
+    processing: processing._count > 0,
+    processingCents: processing._sum.amountCents ?? 0,
     lines: inv.lines,
     payments: inv.payments.map((p) => ({
       id: p.id,

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BillingStatusBadge } from "@/components/billing/badges";
 import { fmtDateUtc } from "@/lib/format";
-import { isOverdue } from "@/lib/billing";
+import { displayInvoiceStatus } from "@/lib/billing";
 import { formatCents } from "@/lib/money";
 import { requireActor } from "@/server/authz/session";
 import { listPortalInvoices, utcToday } from "@/server/services/portal";
@@ -40,7 +40,7 @@ export default async function PortalInvoices() {
                     </Link>
                   </td>
                   <td className="p-2">
-                    <BillingStatusBadge status={isOverdue(i, today) ? "OVERDUE" : i.status} />
+                    <BillingStatusBadge status={displayInvoiceStatus({ ...i, processing: i.payments.length > 0 }, today)} />
                   </td>
                   <td className="p-2">{fmtDateUtc(i.issueDate)}</td>
                   <td className="p-2">{fmtDateUtc(i.dueDate)}</td>

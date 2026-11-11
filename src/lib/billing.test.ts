@@ -93,3 +93,24 @@ describe("invoice state", () => {
     expect(formatNumber("Q", 12345)).toBe("Q-12345");
   });
 });
+
+import { displayInvoiceStatus } from "./billing";
+
+describe("displayInvoiceStatus", () => {
+  const today = new Date(Date.UTC(2026, 10, 10));
+  const past = new Date(Date.UTC(2026, 10, 1));
+  const base = { totalCents: 1000, paidCents: 0, dueDate: past };
+  it("shows Payment pending while a payment is processing, even if overdue", () => {
+    expect(displayInvoiceStatus({ ...base, status: "SENT", processing: true }, today)).toBe("PROCESSING");
+    expect(displayInvoiceStatus({ ...base, status: "PARTIALLY_PAID", processing: true }, today)).toBe("PROCESSING");
+  });
+  it("Paid, Void and Draft always win", () => {
+    for (const status of ["PAID", "VOID", "DRAFT"] as const) {
+      expect(displayInvoiceStatus({ ...base, status, processing: true }, today)).toBe(status);
+    }
+  });
+  it("falls back to overdue, then the stored status", () => {
+    expect(displayInvoiceStatus({ ...base, status: "SENT" }, today)).toBe("OVERDUE");
+    expect(displayInvoiceStatus({ ...base, status: "SENT", dueDate: new Date(Date.UTC(2026, 11, 1)) }, today)).toBe("SENT");
+  });
+});

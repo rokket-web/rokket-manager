@@ -72,3 +72,13 @@ export function isOverdue(i: InvoiceState, today: Date): boolean {
 export function formatNumber(prefix: "INV" | "Q", n: number): string {
   return `${prefix}-${String(n).padStart(4, "0")}`;
 }
+
+/**
+ * The status label to show for an invoice. A payment that is in flight (bank transfer clearing, etc.) wins over everything
+ * except Paid/Void/Draft, then overdue, then the stored status.
+ */
+export function displayInvoiceStatus(i: InvoiceState & { processing?: boolean }, today: Date): string {
+  if (i.status === "PAID" || i.status === "VOID" || i.status === "DRAFT") return i.status;
+  if (i.processing) return "PROCESSING";
+  return isOverdue(i, today) ? "OVERDUE" : i.status;
+}
