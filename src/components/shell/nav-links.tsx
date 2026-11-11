@@ -34,16 +34,16 @@ const ICONS: Record<string, LucideIcon> = {
 const UNREAD_POLL_MS = 10_000;
 
 /**
- * `unread` puts a live count badge on one item (the client's Messages tab). It starts from the server-rendered count and
- * re-checks `endpoint` every few seconds while the tab is visible. Opening that page shows no badge: the thread marks
- * messages read as they appear.
+ * `unread` puts a live count badge on one item (the client's Messages tab, or the admin's Clients item). It starts from the
+ * server-rendered count and re-checks `endpoint` every few seconds while the tab is visible. With `hideWhenActive` the badge
+ * is hidden on that page (the client's thread marks messages read as they appear); the admin keeps it while browsing clients.
  */
 export function NavLinks({
   items,
   unread,
 }: {
   items: { label: string; href: string }[];
-  unread?: { href: string; count: number; endpoint: string };
+  unread?: { href: string; count: number; endpoint: string; hideWhenActive?: boolean };
 }) {
   const pathname = usePathname();
   const [count, setCount] = useState(unread?.count ?? 0);
@@ -98,7 +98,7 @@ export function NavLinks({
           >
             <Icon className="size-4 shrink-0" aria-hidden />
             {item.label}
-            {unread && item.href === unread.href && !isActive && badgeLabel(count) && (
+            {unread && item.href === unread.href && !(unread.hideWhenActive && isActive) && badgeLabel(count) && (
               <span
                 className="bg-primary text-primary-foreground ml-auto rounded-full px-1.5 py-0.5 text-xs leading-none font-semibold"
                 aria-label={`${count} unread`}

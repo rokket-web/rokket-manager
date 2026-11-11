@@ -3,15 +3,27 @@ import { navFor } from "@/server/authz/policy";
 import { ThemeToggle } from "./theme-toggle";
 import { SignOutButton } from "./sign-out-button";
 import { NavLinks } from "./nav-links";
-import { portalUnreadCount } from "@/server/services/messages";
+import { portalUnreadCount, unreadFromClientCount } from "@/server/services/messages";
 
 export async function AppShell({ actor, children }: { actor: Actor; children: React.ReactNode }) {
   const nav = navFor(actor.role);
-  // Clients get an unread badge on their Messages tab. A hiccup here must never break the whole page.
+  // Live unread badges: clients on their Messages tab, admins on Clients (total across all clients).
+  // A hiccup here must never break the whole page, so a failed count just shows no badge.
   const unread =
     actor.role === "CLIENT" && actor.clientId
-      ? { href: "/portal/messages", endpoint: "/api/portal/messages/unread", count: await portalUnreadCount(actor).catch(() => 0) }
-      : undefined;
+      ? {
+          href: "/portal/messages",
+          endpoint: "/api/portal/messages/unread",
+          count: await portalUnreadCount(actor).catch(() => 0),
+          hideWhenActive: true,
+        }
+      : actor.role === "ADMIN"
+        ? {
+            href: "/clients",
+            endpoint: "/api/clients/unread-messages",
+            count: await unreadFromClientCount(actor).catch(() => 0),
+          }
+        : undefined;
   const initial = actor.name.trim().charAt(0).toUpperCase() || "?";
   return (
     <div className="flex min-h-screen md:p-8">
