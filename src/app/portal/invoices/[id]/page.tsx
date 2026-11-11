@@ -1,12 +1,13 @@
 import { orNotFound } from "@/lib/not-found";
 import { BillingStatusBadge } from "@/components/billing/badges";
+import { AutoRefresh } from "@/components/billing/auto-refresh";
 import { LinesTable } from "@/components/billing/doc-view";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { balanceCents, isOverdue } from "@/lib/billing";
+import { balanceCents, displayInvoiceStatus } from "@/lib/billing";
 import { fmtDateUtc } from "@/lib/format";
 import { formatCents } from "@/lib/money";
 import { requireActor } from "@/server/authz/session";
-import { getPortalInvoice, utcToday } from "@/server/services/portal";
+import { getPortalInvoice, refreshPortalInvoicePayments, utcToday } from "@/server/services/portal";
 import { stripeConfigured } from "@/server/stripe";
 import { payInvoiceAction } from "../../actions";
 
@@ -23,26 +24,41 @@ export default async function PortalInvoicePage({
   const { id } = await params;
   const sp = await searchParams;
   const actor = await requireActor(["CLIENT"]);
+  await orNotFound(refreshPortalInvoicePayments(actor, id)); // confirm any payment in flight with Stripe first
   const inv = await orNotFound(getPortalInvoice(actor, id));
   const balance = balanceCents(inv);
-  const payable = (inv.status === "SENT" || inv.status === "PARTIALLY_PAID") && balance > 0 && inv.currency === "USD" && stripeConfigured();
+  const payable =
+    (inv.status === "SENT" || inv.status === "PARTIALLY_PAID") && balance > 0 && inv.currency === "USD" && stripeConfigured() && !inv.processing;
+  const confirming = !!sp.paid && inv.status !== "PAID" && !inv.processing;
   return (
     <div className="space-y-6">
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold">Invoice {inv.number}</h1>
-          <BillingStatusBadge status={isOverdue(inv, utcToday()) ? "OVERDUE" : inv.status} />
+          <BillingStatusBadge status={displayInvoiceStatus(inv, utcToday())} />
         </div>
         <p className="text-muted-foreground text-sm">
           Issued {fmtDateUtc(inv.issueDate)} · Due {fmtDateUtc(inv.dueDate)}
         </p>
       </div>
 
-      {sp.paid && (
-        <p role="status" className="text-sm">
-          Thank you. We are confirming your payment; this page updates once it is received. Bank payments can take a few days.
+      {sp.paid && inv.status === "PAID" && (
+        <p role="status" className="bg-tint-green max-w-2xl rounded-xl p-3 text-sm">
+          <span className="font-medium">Payment received. Thank you!</span> This invoice is paid in full.
         </p>
       )}
+      {inv.processing && (
+        <p role="status" className="bg-tint-amber max-w-2xl rounded-xl p-3 text-sm">
+          <span className="font-medium">Payment pending.</span> Your payment of {formatCents(inv.processingCents, inv.currency)} is being processed.
+          Bank payments can take a few days. This page updates when it clears, and you don&apos;t need to do anything else.
+        </p>
+      )}
+      {confirming && (
+        <p role="status" className="bg-tint-amber max-w-2xl rounded-xl p-3 text-sm">
+          <span className="font-medium">Payment pending.</span> We&apos;re confirming your payment. This page updates on its own.
+        </p>
+      )}
+      <AutoRefresh active={confirming || inv.processing} />
       {sp.cancelled && <p role="status" className="text-sm">Payment was not completed. You have not been charged.</p>}
       {sp.error && (
         <p role="alert" className="text-destructive text-sm">

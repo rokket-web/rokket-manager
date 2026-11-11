@@ -6,7 +6,7 @@ import { db } from "@/server/db";
 import { ConflictError, NotFoundError } from "@/server/errors";
 import { balanceCents } from "@/lib/billing";
 import { formatCents } from "@/lib/money";
-import { appBaseUrl, getStripe } from "@/server/stripe";
+import { appBaseUrl, getStripe, stripeConfigured } from "@/server/stripe";
 import { logClientActivity, resolveRecipient, type Tx } from "./billing-core";
 import { recomputeInvoicePayments } from "./payments";
 
@@ -37,6 +37,9 @@ export async function checkoutForInvoice(inv: PayableInvoice, urls: { success: s
   if (inv.currency !== "USD") throw new ConflictError("This invoice cannot be paid online.");
   const stripe = getStripe();
 
+  if (await db.payment.findFirst({ where: { invoiceId: inv.id, status: "PROCESSING" }, select: { id: true } })) {
+    throw new ConflictError("A payment for this invoice is already being processed.");
+  }
   const pending = await db.payment.findFirst({
     where: {
       invoiceId: inv.id,
@@ -96,13 +99,16 @@ export async function publicInvoiceStatus(token: string) {
   if (!/^[\w-]{16,128}$/.test(token)) return null;
   const inv = await db.invoice.findUnique({
     where: { publicToken: token },
-    select: { number: true, status: true, totalCents: true, paidCents: true, currency: true },
+    select: { number: true, status: true, totalCents: true, paidCents: true, currency: true, payments: { where: { status: "PROCESSING" }, select: { id: true }, take: 1 } },
   });
-  return inv?.number ? inv : null;
+  return inv?.number ? { ...inv, processing: inv.payments.length > 0 } : null;
 }
 
 /** Expire open Checkout sessions so a voided invoice cannot be paid. Throws ConflictError if one was already paid. */
 export async function cancelPendingCheckouts(invoiceId: string): Promise<void> {
+  if (await db.payment.findFirst({ where: { invoiceId, status: "PROCESSING" }, select: { id: true } })) {
+    throw new ConflictError("A payment is being processed for this invoice. Wait for it to settle first.");
+  }
   const pending = await db.payment.findMany({
     where: { invoiceId, method: "STRIPE", status: "PENDING", stripeSessionId: { not: null } },
     select: { id: true, stripeSessionId: true },
@@ -121,6 +127,55 @@ export async function cancelPendingCheckouts(invoiceId: string): Promise<void> {
   }
 }
 
+// ---------- reconcile with Stripe ----------
+
+const RECONCILE_WINDOW_MS = 25 * 60 * 60 * 1000;
+
+/**
+ * Ask Stripe what happened to this invoice's recent checkout sessions and apply it. Called when someone opens the invoice
+ * (and from the return page), so the invoice shows Paid or Pending right away even if the webhook is slow or missing.
+ * Idempotent and safe alongside the webhook. Never throws: a Stripe hiccup just leaves the current state in place.
+ */
+export async function reconcileStripePayments(invoiceId: string): Promise<void> {
+  if (!stripeConfigured()) return;
+  try {
+    const candidates = await db.payment.findMany({
+      where: {
+        invoiceId,
+        method: "STRIPE",
+        status: { in: ["PENDING", "PROCESSING"] },
+        stripeSessionId: { not: null },
+        createdAt: { gt: new Date(Date.now() - RECONCILE_WINDOW_MS) },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 3,
+      select: { id: true, stripeSessionId: true },
+    });
+    if (candidates.length === 0) return;
+    const stripe = getStripe();
+    for (const c of candidates) {
+      const session = await stripe.checkout.sessions.retrieve(c.stripeSessionId!);
+      await db.$transaction(async (tx) => {
+        if (session.payment_status === "paid") return settleSession(tx, session);
+        if (session.status === "complete") {
+          await tx.payment.updateMany({ where: { id: c.id, status: "PENDING" }, data: { status: "PROCESSING" } });
+        } else if (session.status === "expired") {
+          await tx.payment.updateMany({ where: { id: c.id, status: "PENDING" }, data: { status: "FAILED" } });
+        }
+      });
+    }
+  } catch (e) {
+    console.error("[stripe reconcile]", e instanceof Error ? e.name : e);
+  }
+}
+
+/** Public return page: refresh by the unguessable token, then read the status. */
+export async function refreshPublicInvoice(token: string): Promise<void> {
+  if (!/^[\w-]{16,128}$/.test(token)) return;
+  const inv = await db.invoice.findUnique({ where: { publicToken: token }, select: { id: true } });
+  if (inv) await reconcileStripePayments(inv.id);
+}
+
 // ---------- webhook processing ----------
 
 async function settleSession(tx: Tx, session: Stripe.Checkout.Session) {
@@ -128,10 +183,12 @@ async function settleSession(tx: Tx, session: Stripe.Checkout.Session) {
   if (!payment || payment.status === "SUCCEEDED") return;
   const paid = session.amount_total ?? payment.amountCents;
   const pi = typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null);
-  await tx.payment.update({
-    where: { id: payment.id },
+  // Compare-and-set: the webhook and a page-load reconcile can race; only the winner records the activity.
+  const won = await tx.payment.updateMany({
+    where: { id: payment.id, status: { not: "SUCCEEDED" } },
     data: { status: "SUCCEEDED", amountCents: paid, paidAt: new Date(), stripePaymentIntentId: pi },
   });
+  if (won.count === 0) return;
   const inv = await recomputeInvoicePayments(tx, payment.invoiceId);
   await logClientActivity(tx, payment.invoice.clientId, null, "invoice.payment", `Card payment of ${formatCents(paid, payment.currency)} received on ${payment.invoice.number}`);
   await audit(
@@ -183,8 +240,14 @@ export async function processStripeEvent(event: Stripe.Event): Promise<EventOutc
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded":
         if (event.data.object.payment_status === "paid") await settleSession(tx, event.data.object);
+        else await tx.payment.updateMany({ where: { stripeSessionId: event.data.object.id, status: "PENDING" }, data: { status: "PROCESSING" } });
         return "processed";
       case "checkout.session.async_payment_failed":
+        await tx.payment.updateMany({
+          where: { stripeSessionId: event.data.object.id, status: { in: ["PENDING", "PROCESSING"] } },
+          data: { status: "FAILED" },
+        });
+        return "processed";
       case "checkout.session.expired":
         await tx.payment.updateMany({ where: { stripeSessionId: event.data.object.id, status: "PENDING" }, data: { status: "FAILED" } });
         return "processed";

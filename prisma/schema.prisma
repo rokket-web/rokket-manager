@@ -461,7 +461,8 @@ enum PaymentMethod {
 }
 
 enum PaymentStatus {
-  PENDING
+  PENDING // Stripe checkout opened; the client may still be paying or may have abandoned it
+  PROCESSING // checkout completed but funds not settled yet (e.g. bank transfer)
   SUCCEEDED
   FAILED
   REFUNDED

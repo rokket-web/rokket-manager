@@ -10,6 +10,7 @@ const STATUS: Record<string, [string, string]> = {
   PARTIALLY_PAID: ["Partially paid", "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300"],
   PAID: ["Paid", "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/20 dark:text-emerald-300"],
   VOID: ["Void", "bg-slate-100 text-slate-500 hover:bg-slate-100 dark:bg-white/10 dark:text-slate-300"],
+  PROCESSING: ["Payment pending", "bg-amber-100 text-amber-700 hover:bg-amber-100 dark:bg-amber-500/20 dark:text-amber-300"],
   OVERDUE: ["Overdue", "bg-rose-100 text-rose-600 hover:bg-rose-100 dark:bg-rose-500/20 dark:text-rose-300"],
 };
 

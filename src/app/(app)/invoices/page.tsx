@@ -3,7 +3,7 @@ import { BillingStatusBadge } from "@/components/billing/badges";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCents } from "@/lib/money";
-import { isOverdue } from "@/lib/billing";
+import { displayInvoiceStatus } from "@/lib/billing";
 import { requireActor } from "@/server/authz/session";
 import { listInvoices } from "@/server/services/invoices";
 import { fmtDate } from "../projects/status-badges";
@@ -101,7 +101,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                     </Link>
                   </td>
                   <td className="p-2">
-                    <BillingStatusBadge status={isOverdue(i, today) ? "OVERDUE" : i.status} />
+                    <BillingStatusBadge status={displayInvoiceStatus({ ...i, processing: i.payments.length > 0 }, today)} />
                   </td>
                   <td className="p-2">{fmtDate(i.dueDate)}</td>
                   <td className="p-2 text-right tabular-nums">{formatCents(i.totalCents, i.currency)}</td>

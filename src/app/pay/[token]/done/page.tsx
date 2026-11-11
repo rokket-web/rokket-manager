@@ -1,5 +1,6 @@
 import { formatCents } from "@/lib/money";
-import { publicInvoiceStatus } from "@/server/services/stripe-payments";
+import { AutoRefresh } from "@/components/billing/auto-refresh";
+import { publicInvoiceStatus, refreshPublicInvoice } from "@/server/services/stripe-payments";
 
 export const metadata = { title: "Payment", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -13,19 +14,25 @@ export default async function PayDonePage({
 }) {
   const { token } = await params;
   const { result } = await searchParams;
+  await refreshPublicInvoice(token); // confirm with Stripe so a fast payment shows as paid right away
   const inv = await publicInvoiceStatus(token);
   if (!inv) return <Shell title="Not found" body="This payment link is not valid." />;
   const paid = inv.status === "PAID";
   if (result === "success") {
     return (
-      <Shell
-        title={paid ? "Payment received" : "Thank you"}
-        body={
-          paid
-            ? `Invoice ${inv.number} is paid in full. A receipt is on its way from Stripe.`
-            : `We are confirming your payment for invoice ${inv.number}. This usually takes a few seconds; bank payments can take a few days.`
-        }
-      />
+      <>
+        <AutoRefresh active={!paid} />
+        <Shell
+          title={paid ? "Payment received" : "Payment pending"}
+          body={
+            paid
+              ? `Invoice ${inv.number} is paid in full. A receipt is on its way from Stripe.`
+              : inv.processing
+                ? `Your payment for invoice ${inv.number} is being processed. Bank payments can take a few days. You don't need to do anything else.`
+                : `We are confirming your payment for invoice ${inv.number}. This page updates on its own and usually takes a few seconds.`
+          }
+        />
+      </>
     );
   }
   return (

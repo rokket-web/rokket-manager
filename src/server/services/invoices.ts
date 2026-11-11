@@ -6,7 +6,7 @@ import { assertBilling } from "@/server/authz/billing";
 import { ConflictError, NotFoundError } from "@/server/errors";
 import { randomBytes } from "node:crypto";
 import { formatCents } from "@/lib/money";
-import { cancelPendingCheckouts } from "./stripe-payments";
+import { cancelPendingCheckouts, reconcileStripePayments } from "./stripe-payments";
 import { formatQuantity, minutesToQuantityMilli } from "@/lib/billing";
 import { billingListSchema, fromTimeSchema, invoiceInputSchema, type LineInput } from "@/lib/validation/billing";
 import { MAX_LINES } from "@/lib/validation/billing";
@@ -51,12 +51,21 @@ export async function listInvoices(actor: ActorLike, rawQuery: unknown) {
         orderBy: { createdAt: "desc" },
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
-        include: { client: { select: { id: true, name: true } } },
+        include: {
+          client: { select: { id: true, name: true } },
+          payments: { where: { status: "PROCESSING" }, select: { id: true }, take: 1 },
+        },
       }),
       db.invoice.count({ where }),
     ]),
   );
   return { items, total, page: q.page, pageSize: q.pageSize, pageCount: Math.max(1, Math.ceil(total / q.pageSize)) };
+}
+
+/** Admin opened an invoice: pull the latest from Stripe first so Paid / Pending is current. */
+export async function refreshInvoicePayments(actor: ActorLike, id: string) {
+  assertBilling(actor, "billing:read");
+  await reconcileStripePayments(id);
 }
 
 export async function getInvoice(actor: ActorLike, id: string) {
@@ -198,7 +207,7 @@ export async function voidInvoice(actor: ActorLike, id: string) {
     if (!inv) throw new NotFoundError("Invoice not found.");
     if (inv.status === "VOID") throw new ConflictError("Already void.");
     if (inv.status === "DRAFT") throw new ConflictError("Delete a draft instead of voiding it.");
-    const paying = await tx.payment.count({ where: { invoiceId: id, status: { in: ["SUCCEEDED", "PENDING"] } } });
+    const paying = await tx.payment.count({ where: { invoiceId: id, status: { in: ["SUCCEEDED", "PENDING", "PROCESSING"] } } });
     if (paying > 0) throw new ConflictError("This invoice has payments. Refund them before voiding.");
     await tx.invoiceLine.updateMany({ where: { invoiceId: id }, data: { timeEntryId: null } });
     // A voided installment invoice frees its installment so it can be invoiced again (amount is unchanged).

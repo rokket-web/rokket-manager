@@ -77,6 +77,11 @@ Storage interface (Phase 3). Payments: Stripe (Phase 4).
   Webhook `/api/webhooks/stripe` verifies the signature on the raw body, records `StripeEvent` ids in the same transaction as the
   effects (failure rolls back -> Stripe retries; repeats are no-ops). A live key is refused outside production. See `docs/stripe-setup.md`.
 - Voiding an invoice first expires open Checkout sessions; it is refused if one was already paid.
+- Payment states: `PENDING` = checkout opened (may be abandoned); `PROCESSING` = checkout completed but funds not settled (bank transfer);
+  `SUCCEEDED`/`FAILED`/`REFUNDED`. `reconcileStripePayments(invoiceId)` asks Stripe about recent sessions and is called when the admin
+  invoice, portal invoice or public return page loads, so Paid/Pending is right even if the webhook is slow or missing (idempotent with the
+  webhook: `settleSession` is compare-and-set). A PROCESSING payment blocks new checkouts and voiding. `displayInvoiceStatus()` picks the
+  label ("Payment pending" beats Overdue/Sent; Paid/Void/Draft always win). `AutoRefresh` re-renders the page until it settles.
 - Known limitation: if a client pays by card after a manual payment covered the balance, the invoice shows overpaid
   (audit meta `overpaidCents`); refund it from the invoice page.
 - Client accept/decline links and the portal invoice views are Phase 5; for now the admin records quote responses.
